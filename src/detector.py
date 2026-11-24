@@ -12,7 +12,8 @@ import struct
 import tempfile
 
 from ultralytics import YOLO
-from src.db import save_event
+from db import save_event
+from pathlib import Path
 
 
 # ==========================================
@@ -43,7 +44,8 @@ LOOK_AWAY_ANGLE = 25
 LOOK_AWAY_SECONDS = 2.0
 
 # Phone detection
-YOLO_MODEL = "yolo26n.pt"
+ROOT = Path(__file__).resolve().parent.parent
+YOLO_MODEL = str(ROOT / "models" / "yolo26n.pt")
 YOLO_FRAME_INTERVAL = 5
 PHONE_SECONDS = 1.0
 PHONE_CLASS_ID = 67
