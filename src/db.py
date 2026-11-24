@@ -2,8 +2,10 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
+from pathlib import Path
 
-DB_NAME = "events.db"
+ROOT = Path(__file__).resolve().parent.parent
+DB_NAME = ROOT / "data" / "events.db"
 
 
 def create_table():
