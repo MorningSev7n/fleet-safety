@@ -11,9 +11,11 @@ import wave
 import struct
 import tempfile
 
-from ultralytics import YOLO
-from db import save_event
 from pathlib import Path
+from ultralytics import YOLO
+
+from db import save_event
+from severity import classify_severity
 
 
 # ==========================================
@@ -44,11 +46,12 @@ LOOK_AWAY_ANGLE = 25
 LOOK_AWAY_SECONDS = 2.0
 
 # Phone detection
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent
 YOLO_MODEL = str(ROOT / "models" / "yolo26n.pt")
 YOLO_FRAME_INTERVAL = 5
 PHONE_SECONDS = 1.0
 PHONE_CLASS_ID = 67
+PHONE_CONFIDENCE = 0.35
 
 # Alarm
 ALARM_FREQUENCY_LOW = 650
@@ -74,6 +77,7 @@ def get_landmark_points(face_landmarks, indices, width, height):
     points = []
 
     for index in indices:
+
         landmark = face_landmarks.landmark[index]
 
         x = int(landmark.x * width)
@@ -162,10 +166,7 @@ POSE_LANDMARKS = [1, 152, 263, 33, 291, 61]
 
 
 def estimate_head_pose(face_landmarks, width, height):
-    """
-    Estimate head yaw and pitch using OpenCV solvePnP.
-    Angles are approximate and should be calibrated.
-    """
+    """Estimate head yaw and pitch using OpenCV solvePnP."""
 
     image_points = get_landmark_points(
         face_landmarks,
@@ -210,6 +211,7 @@ def estimate_head_pose(face_landmarks, width, height):
     singular = sy < 1e-6
 
     if not singular:
+
         pitch = math.atan2(
             rotation_matrix[2, 1],
             rotation_matrix[2, 2]
@@ -221,6 +223,7 @@ def estimate_head_pose(face_landmarks, width, height):
         )
 
     else:
+
         pitch = math.atan2(
             -rotation_matrix[1, 2],
             rotation_matrix[1, 1]
@@ -248,10 +251,7 @@ alarm_shutdown = threading.Event()
 
 
 def create_alarm_sound():
-    """
-    Generate a repeating two-tone siren using Python's
-    built-in wave library. No extra audio package needed.
-    """
+    """Generate a repeating two-tone siren."""
 
     sample_rate = 44100
     total_samples = int(sample_rate * ALARM_DURATION)
@@ -268,7 +268,6 @@ def create_alarm_sound():
 
             progress = i / total_samples
 
-            # Sweep between low and high frequencies
             frequency = (
                 ALARM_FREQUENCY_LOW
                 + (ALARM_FREQUENCY_HIGH - ALARM_FREQUENCY_LOW)
@@ -276,8 +275,6 @@ def create_alarm_sound():
             )
 
             current_time = i / sample_rate
-
-            # Short pauses create an urgent warning pattern
             pulse_position = current_time % 0.4
 
             if pulse_position < 0.28:
@@ -301,11 +298,7 @@ def create_alarm_sound():
 
 
 def play_alarm_continuously():
-    """
-    Keep playing the alarm while unsafe behavior is detected.
-
-    The sound stops when alarm_active is cleared.
-    """
+    """Keep playing the alarm while an unsafe behavior is detected."""
 
     while not alarm_shutdown.is_set():
 
@@ -317,6 +310,7 @@ def play_alarm_continuously():
             try:
 
                 if not os.path.exists(ALARM_SOUND):
+
                     print("ERROR: Alarm sound file is missing.")
                     alarm_active.wait(timeout=0.5)
                     continue
@@ -327,7 +321,6 @@ def play_alarm_continuously():
                     stderr=subprocess.DEVNULL
                 )
 
-                # Monitor playback so it can stop immediately
                 while (
                     process.poll() is None
                     and alarm_active.is_set()
@@ -335,7 +328,6 @@ def play_alarm_continuously():
                 ):
                     time.sleep(0.05)
 
-                # Stop the current sound if the driver recovers
                 if process.poll() is None:
 
                     process.terminate()
@@ -383,9 +375,23 @@ def stop_alarm_worker(thread):
 # ==========================================
 
 def log_event(event_type, duration):
-    """Save an event using the existing database function."""
+    """
+    Classify and save an event using its full duration.
+    """
 
-    severity = "HIGH"
+    severity = classify_severity(
+        event_type,
+        duration
+    )
+
+    if severity == "UNKNOWN":
+
+        print(
+            f"EVENT NOT SAVED: {event_type} "
+            f"({duration:.2f} seconds)"
+        )
+
+        return
 
     try:
 
@@ -398,8 +404,9 @@ def log_event(event_type, duration):
         )
 
         print(
-            f"EVENT SAVED: {event_type} "
-            f"({duration:.2f} seconds)"
+            f"EVENT SAVED: {event_type} | "
+            f"{duration:.2f} seconds | "
+            f"Severity: {severity}"
         )
 
     except Exception as error:
@@ -409,11 +416,33 @@ def log_event(event_type, duration):
         )
 
 
+def finish_event(event_type, start_time, end_time):
+    """
+    Finalize an event when the detected behavior ends.
+
+    Events shorter than their minimum duration are ignored.
+    """
+
+    if start_time is None:
+        return
+
+    duration = end_time - start_time
+
+    if classify_severity(event_type, duration) != "UNKNOWN":
+        log_event(event_type, duration)
+
+
 # ==========================================
 # 6. DISPLAY HELPERS
 # ==========================================
 
-def draw_text(frame, text, position, color=(255, 255, 255), scale=0.65):
+def draw_text(
+    frame,
+    text,
+    position,
+    color=(255, 255, 255),
+    scale=0.65
+):
 
     cv2.putText(
         frame,
@@ -502,18 +531,19 @@ def run_detector():
     print("Starting Fleet Safety Driver Monitoring...")
     print("Press Q to quit.")
 
-    # Generate the emergency siren
+    # Generate the emergency siren.
     try:
+
         create_alarm_sound()
 
     except Exception as error:
+
         print(f"Could not generate alarm sound: {error}")
         return
 
-    # Start the alarm background thread
     alarm_thread = start_alarm_worker()
 
-    # Open webcam
+    # Open webcam.
     cap = cv2.VideoCapture(CAMERA_INDEX)
 
     if not cap.isOpened():
@@ -522,7 +552,7 @@ def run_detector():
         stop_alarm_worker(alarm_thread)
         return
 
-    # Load YOLO
+    # Load YOLO.
     try:
 
         print(f"Loading YOLO model: {YOLO_MODEL}")
@@ -539,20 +569,13 @@ def run_detector():
 
     mp_face_mesh = mp.solutions.face_mesh
 
-    # Event timing
+    # Event timing.
     eyes_closed_start = None
-    eyes_event_logged = False
-
     yawn_start = None
-    yawn_event_logged = False
-
     look_away_start = None
-    look_away_event_logged = False
-
     phone_start = None
-    phone_event_logged = False
 
-    # YOLO frame tracking
+    # YOLO frame tracking.
     frame_count = 0
     phone_detected = False
     phone_box_to_draw = None
@@ -580,7 +603,7 @@ def run_detector():
                 height, width, _ = frame.shape
                 current_time = time.monotonic()
 
-                # Reset alert states every frame
+                # Reset alert states every frame.
                 eyes_alert_active = False
                 look_away_alert_active = False
                 phone_alert_active = False
@@ -667,19 +690,15 @@ def run_detector():
 
                             eyes_alert_active = True
 
-                            if not eyes_event_logged:
-
-                                log_event(
-                                    "EYES_CLOSED",
-                                    closed_duration
-                                )
-
-                                eyes_event_logged = True
-
                     else:
 
+                        finish_event(
+                            "EYES_CLOSED",
+                            eyes_closed_start,
+                            current_time
+                        )
+
                         eyes_closed_start = None
-                        eyes_event_logged = False
 
                     # ----------------------------------
                     # YAWN DETECTION
@@ -698,20 +717,15 @@ def run_detector():
                         if yawn_start is None:
                             yawn_start = current_time
 
-                        yawn_duration = current_time - yawn_start
-
-                        if (
-                            yawn_duration >= YAWN_SECONDS
-                            and not yawn_event_logged
-                        ):
-
-                            log_event("YAWN", yawn_duration)
-                            yawn_event_logged = True
-
                     else:
 
+                        finish_event(
+                            "YAWN",
+                            yawn_start,
+                            current_time
+                        )
+
                         yawn_start = None
-                        yawn_event_logged = False
 
                     # ----------------------------------
                     # LOOKING-AWAY DETECTION
@@ -741,19 +755,15 @@ def run_detector():
 
                             look_away_alert_active = True
 
-                            if not look_away_event_logged:
-
-                                log_event(
-                                    "LOOK_AWAY",
-                                    look_away_duration
-                                )
-
-                                look_away_event_logged = True
-
                     else:
 
+                        finish_event(
+                            "LOOK_AWAY",
+                            look_away_start,
+                            current_time
+                        )
+
                         look_away_start = None
-                        look_away_event_logged = False
 
                     # ----------------------------------
                     # DISPLAY FACE READINGS
@@ -821,15 +831,29 @@ def run_detector():
 
                 else:
 
-                    # Reset face-dependent event timers
+                    # Face disappearance ends active face events.
+
+                    finish_event(
+                        "EYES_CLOSED",
+                        eyes_closed_start,
+                        current_time
+                    )
+
+                    finish_event(
+                        "YAWN",
+                        yawn_start,
+                        current_time
+                    )
+
+                    finish_event(
+                        "LOOK_AWAY",
+                        look_away_start,
+                        current_time
+                    )
+
                     eyes_closed_start = None
-                    eyes_event_logged = False
-
                     yawn_start = None
-                    yawn_event_logged = False
-
                     look_away_start = None
-                    look_away_event_logged = False
 
                     draw_text(
                         frame,
@@ -875,7 +899,7 @@ def run_detector():
                                     box.conf[0].item()
                                 )
 
-                                if confidence < 0.35:
+                                if confidence < PHONE_CONFIDENCE:
                                     continue
 
                                 coordinates = (
@@ -924,21 +948,23 @@ def run_detector():
                     if phone_start is None:
                         phone_start = current_time
 
-                    phone_duration = current_time - phone_start
+                    phone_duration = (
+                        current_time - phone_start
+                    )
 
                     if phone_duration >= PHONE_SECONDS:
 
                         phone_alert_active = True
 
-                        if not phone_event_logged:
-
-                            log_event("PHONE", phone_duration)
-                            phone_event_logged = True
-
                 else:
 
+                    finish_event(
+                        "PHONE",
+                        phone_start,
+                        current_time
+                    )
+
                     phone_start = None
-                    phone_event_logged = False
 
                 # ----------------------------------
                 # CONTINUOUS ALARM CONTROL
@@ -1025,6 +1051,35 @@ def run_detector():
 
     finally:
 
+        # Save any event that was still active when
+        # the detector stopped.
+
+        shutdown_time = time.monotonic()
+
+        finish_event(
+            "EYES_CLOSED",
+            eyes_closed_start,
+            shutdown_time
+        )
+
+        finish_event(
+            "YAWN",
+            yawn_start,
+            shutdown_time
+        )
+
+        finish_event(
+            "LOOK_AWAY",
+            look_away_start,
+            shutdown_time
+        )
+
+        finish_event(
+            "PHONE",
+            phone_start,
+            shutdown_time
+        )
+
         alarm_active.clear()
 
         cap.release()
@@ -1032,7 +1087,6 @@ def run_detector():
 
         stop_alarm_worker(alarm_thread)
 
-        # Remove the temporary alarm file
         if os.path.exists(ALARM_SOUND):
             os.remove(ALARM_SOUND)
 

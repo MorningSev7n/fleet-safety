@@ -1,7 +1,9 @@
 
 import random
+from collections import Counter
 
 from db import save_event
+from severity import SEVERITY_RULES, classify_severity
 
 
 # Synthetic drivers and vehicles
@@ -13,44 +15,91 @@ DRIVERS = [
     ("DRIVER_005", "VEHICLE_005"),
 ]
 
-# Event types and duration ranges (seconds)
-EVENTS = {
-    "EYES_CLOSED": (1.5, 5.0),
-    "YAWN": (1.0, 4.0),
-    "LOOK_AWAY": (2.0, 6.0),
-    "PHONE": (1.0, 8.0),
-}
-
-SEVERITY = "HIGH"
 TOTAL_EVENTS = 40
+
+SEVERITY_LEVELS = [
+    "LOW",
+    "MEDIUM",
+    "HIGH",
+]
+
+
+def generate_duration(event_type, severity):
+    """Generate a duration matching the requested severity."""
+
+    rules = SEVERITY_RULES[event_type]
+
+    if severity == "LOW":
+
+        minimum = rules["minimum"]
+        maximum = rules["medium"] - 0.01
+
+    elif severity == "MEDIUM":
+
+        minimum = rules["medium"]
+        maximum = rules["high"] - 0.01
+
+    else:
+
+        minimum = rules["high"]
+        maximum = rules["maximum"]
+
+    return round(
+        random.uniform(minimum, maximum),
+        2
+    )
 
 
 def seed_database():
+
     inserted = 0
+    severity_counts = Counter()
+    event_counts = Counter()
 
-    # Make sure all four event types appear 10 times.
-    event_types = list(EVENTS.keys())
-    generated_events = event_types * (TOTAL_EVENTS // len(event_types))
+    event_types = list(SEVERITY_RULES.keys())
 
-    # Add remaining events if TOTAL_EVENTS changes.
-    remaining = TOTAL_EVENTS - len(generated_events)
+    if TOTAL_EVENTS % len(event_types) != 0:
+        raise ValueError(
+            "TOTAL_EVENTS must be divisible by the number of event types."
+        )
 
-    for _ in range(remaining):
-        generated_events.append(random.choice(event_types))
+    events_per_type = TOTAL_EVENTS // len(event_types)
 
-    # Mix event types randomly.
+    generated_events = []
+
+    # Generate an equal number of each event type.
+    for event_type in event_types:
+
+        for index in range(events_per_type):
+
+            # Rotate severity levels to ensure all three
+            # appear in the synthetic dataset.
+            severity = SEVERITY_LEVELS[
+                index % len(SEVERITY_LEVELS)
+            ]
+
+            generated_events.append(
+                (event_type, severity)
+            )
+
+    # Mix the events randomly.
     random.shuffle(generated_events)
 
-    # Insert synthetic events into the database.
-    for event_type in generated_events:
+    # Insert synthetic events.
+    for event_type, expected_severity in generated_events:
 
-        # Assign 8 events to each driver.
-        driver_id, vehicle_id = DRIVERS[inserted % len(DRIVERS)]
+        driver_id, vehicle_id = DRIVERS[
+            inserted % len(DRIVERS)
+        ]
 
-        min_duration, max_duration = EVENTS[event_type]
+        duration = generate_duration(
+            event_type,
+            expected_severity
+        )
 
-        duration = round(
-            random.uniform(min_duration, max_duration), 2
+        severity = classify_severity(
+            event_type,
+            duration
         )
 
         save_event(
@@ -58,16 +107,31 @@ def seed_database():
             vehicle_id=vehicle_id,
             event_type=event_type,
             duration_s=duration,
-            severity=SEVERITY,
+            severity=severity,
         )
 
         inserted += 1
 
+        severity_counts[severity] += 1
+        event_counts[event_type] += 1
+
     print("\n========== SEED COMPLETE ==========")
+
     print(f"Synthetic events inserted: {inserted}")
     print(f"Drivers available: {len(DRIVERS)}")
-    print(f"Event types available: {len(EVENTS)}")
-    print(f"Severity: {SEVERITY}")
+
+    print("\nEvent distribution:")
+
+    for event_type, count in sorted(event_counts.items()):
+        print(f"{event_type}: {count}")
+
+    print("\nSeverity distribution:")
+
+    for severity in SEVERITY_LEVELS:
+        print(
+            f"{severity}: {severity_counts[severity]}"
+        )
+
     print("===================================\n")
 
 
