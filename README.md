@@ -2,7 +2,7 @@
 
 Detects driver fatigue and phone use from a webcam, alerts in real time, and logs events to a dashboard.
 
-## Setup (macOS, Apple silicon, Python 3.11)
+## Setup (Python 3.11)
 
 ```bash
 python3.11 -m venv .venv
@@ -10,7 +10,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Put `yolo26n.pt` in `models/`. Optional: copy `.env.example` to `.env` and add your Gemini key.
+Put `yolo26n.pt` in `models/`. Optional: copy `.env.example` to `.env`.
 
 ## Run (from the project folder)
 

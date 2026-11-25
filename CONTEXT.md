@@ -67,8 +67,7 @@ id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING
 - [x] detector.py: phone
 - [x] seed.py
 - [x] dashboard.py
-- [ ] tested on my phone
-- [ ] gemini summary (optional)
+- [x] tested on my phone
 - [x] README setup note
 
 ## session log (newest first)
