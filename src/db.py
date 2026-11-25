@@ -9,8 +9,13 @@ DB_NAME = ROOT / "data" / "events.db"
 
 
 def create_table():
-    """Create the events table if it doesn't exist."""
+    """Create the webcam and driving events tables if they don't exist."""
+
+    DB_NAME.parent.mkdir(parents=True, exist_ok=True)
+
     with sqlite3.connect(DB_NAME) as conn:
+
+        # Existing webcam events table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,9 +28,24 @@ def create_table():
             )
         """)
 
+        # New driving behaviour events table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS driving_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                driver_id TEXT NOT NULL,
+                vehicle_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                measured_value REAL NOT NULL,
+                threshold_value REAL NOT NULL,
+                severity TEXT NOT NULL
+            )
+        """)
+
 
 def save_event(driver_id, vehicle_id, event_type, duration_s, severity):
-    """Save a new event with the current timestamp."""
+    """Save a new webcam event with the current timestamp."""
+
     timestamp = datetime.now().isoformat(timespec="seconds")
 
     with sqlite3.connect(DB_NAME) as conn:
@@ -50,7 +70,8 @@ def save_event(driver_id, vehicle_id, event_type, duration_s, severity):
 
 
 def get_events():
-    """Retrieve all events as a pandas DataFrame."""
+    """Retrieve all webcam events as a pandas DataFrame."""
+
     with sqlite3.connect(DB_NAME) as conn:
         df = pd.read_sql_query(
             "SELECT * FROM events ORDER BY timestamp DESC",
@@ -60,5 +81,52 @@ def get_events():
     return df
 
 
-# Create the table when this module is imported.
+def save_driving_event(
+    driver_id,
+    vehicle_id,
+    event_type,
+    measured_value,
+    threshold_value,
+    severity,
+):
+    """Save a new synthetic driving behaviour event."""
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.execute("""
+            INSERT INTO driving_events (
+                timestamp,
+                driver_id,
+                vehicle_id,
+                event_type,
+                measured_value,
+                threshold_value,
+                severity
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            timestamp,
+            driver_id,
+            vehicle_id,
+            event_type,
+            measured_value,
+            threshold_value,
+            severity
+        ))
+
+
+def get_driving_events():
+    """Retrieve all driving behaviour events as a pandas DataFrame."""
+
+    with sqlite3.connect(DB_NAME) as conn:
+        df = pd.read_sql_query(
+            "SELECT * FROM driving_events ORDER BY timestamp DESC",
+            conn
+        )
+
+    return df
+
+
+# Create both tables when this module is imported.
 create_table()
