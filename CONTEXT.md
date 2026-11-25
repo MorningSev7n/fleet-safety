@@ -23,16 +23,28 @@ right away, logs it, and shows everything on a dashboard. free tools only, synth
 - alarm: macOS afplay in a background thread so the video doesnt freeze
 
 ## my files
-- detector.py – webcam, eye/mouth/head checks, yolo phone check, alarm, saves events
-- db.py – save_event(driver_id, vehicle_id, event_type, duration_s, severity) and get_events() → dataframe
-- seed.py – makes 40 fake events
-- dashboard.py – streamlit numbers, 4 charts, filters, export
+src/ (the app):
+- detector.py – webcam loop, settings, alert text, saves events
+- detection/face_checks.py – EAR, MAR, head pose maths
+- detection/alarm.py – siren sound + afplay background thread
+- detection/phone_check.py – face box + "phone near face" check (YOLO itself runs in detector.py)
+- severity.py – LOW/MEDIUM/HIGH rules per event type
+- db.py – save_event(..., timestamp=None), get_events(), save_driving_events(), get_driving_events()
+- scoring.py – driver scores from driving events
+- dashboard.py – streamlit numbers, charts, filters, export
+scripts/ (run by hand from the project folder, e.g. python scripts/seed.py):
+- calibrate_eyes.py – shows live EAR so i can pick the threshold (was test_eyes.py)
+- seed.py – 40 fake webcam events spread over the last 14 days
+- driving_behavior.py + seed_behavior.py – 40 fake driving events (braking, cornering, speeding)
 
 ## events table
 id, timestamp, driver_id, vehicle_id, event_type (EYES_CLOSED, YAWN, LOOK_AWAY, PHONE), duration_s, severity
 
+## driving_events table
+id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING, SPEEDING), measured_value, threshold_value, severity
+
 ## my settings
-- EAR threshold: ____ (eyes closed for 1.5s or more)
+- EAR threshold: 0.20 (eyes closed for 1.5s or more)
 - MAR threshold: 0.65
 - looking away: head turned more than ~25° for 2s
 - alarm cooldown: 5s
@@ -48,16 +60,17 @@ id, timestamp, driver_id, vehicle_id, event_type (EYES_CLOSED, YAWN, LOOK_AWAY, 
 
 ## progress
 - [x] setup: venv, packages, github repo (earlysev7n/fleet-safety)
-- [ ] test_eyes.py (EAR open: __ closed: __)
-- [ ] db.py
-- [ ] detector.py: eyes closed + alarm
-- [ ] detector.py: yawn + looking away
-- [ ] detector.py: phone
-- [ ] seed.py
-- [ ] dashboard.py
+- [x] calibrate_eyes.py (was test_eyes.py) – EAR threshold set to 0.20
+- [x] db.py
+- [x] detector.py: eyes closed + alarm
+- [x] detector.py: yawn + looking away
+- [x] detector.py: phone
+- [x] seed.py
+- [x] dashboard.py
 - [ ] tested on my phone
 - [ ] gemini summary (optional)
-- [ ] README setup note
+- [x] README setup note
 
 ## session log (newest first)
+- 25 nov – cleanup: split detector.py into src/detection/ (face_checks, alarm, phone_check), moved seed/calibrate scripts to scripts/ (code moved unchanged), renamed test_eyes → calibrate_eyes, seeded events now spread over 14 days (fixed the 40 rows in events.db too), trimmed requirements.txt, added .env.example + README setup. next: test on phone, gemini summary (optional)
 - 23 nov – setup done: venv, packages, github repo. next: test_eyes.py

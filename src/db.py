@@ -43,10 +43,11 @@ def create_table():
         """)
 
 
-def save_event(driver_id, vehicle_id, event_type, duration_s, severity):
-    """Save a webcam event with the current timestamp."""
+def save_event(driver_id, vehicle_id, event_type, duration_s, severity, timestamp=None):
+    """Save a webcam event. Uses the current time unless a timestamp is given."""
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    if timestamp is None:
+        timestamp = datetime.now().isoformat(timespec="seconds")
 
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute("""

@@ -1,5 +1,11 @@
+import sys
+from pathlib import Path
+
+# Scripts live outside src/, so add src/ to the import path to reach db.py and severity.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import random
+from datetime import datetime, timedelta
 from collections import Counter
 
 from db import save_event
@@ -16,6 +22,9 @@ DRIVERS = [
 ]
 
 TOTAL_EVENTS = 40
+
+# Spread seeded events over this many past days so the date filter has a range.
+SEED_DAYS = 14
 
 SEVERITY_LEVELS = [
     "LOW",
@@ -85,6 +94,8 @@ def seed_database():
     # Mix the events randomly.
     random.shuffle(generated_events)
 
+    now = datetime.now()
+
     # Insert synthetic events.
     for event_type, expected_severity in generated_events:
 
@@ -108,6 +119,9 @@ def seed_database():
             event_type=event_type,
             duration_s=duration,
             severity=severity,
+            timestamp=(
+                now - timedelta(minutes=random.randint(0, SEED_DAYS * 24 * 60))
+            ).isoformat(timespec="seconds"),
         )
 
         inserted += 1

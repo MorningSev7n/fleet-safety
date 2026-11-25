@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+
+# Scripts live outside src/, so add src/ to the import path to reach db.py and severity.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from collections import Counter
 
