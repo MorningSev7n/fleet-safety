@@ -46,7 +46,7 @@ LOOK_AWAY_ANGLE = 25
 LOOK_AWAY_SECONDS = 2.0
 
 # Phone detection
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 YOLO_MODEL = str(ROOT / "models" / "yolo26n.pt")
 YOLO_FRAME_INTERVAL = 5
 PHONE_SECONDS = 1.0
