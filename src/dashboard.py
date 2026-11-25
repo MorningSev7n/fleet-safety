@@ -456,7 +456,7 @@ def show_monitoring_tab(df):
 
     if df.empty:
 
-        st.info("No webcam events yet. Run `python seed.py` or start the detector.")
+        st.info("No webcam events yet. Run `python scripts/seed.py` or start the detector.")
         return
 
     filtered, _, _, _ = show_filters(df, "webcam")
@@ -543,7 +543,7 @@ def show_driving_tab(df):
 
     if df.empty:
 
-        st.info("No driving events yet. Run `python seed_behavior.py`.")
+        st.info("No driving events yet. Run `python scripts/seed_behavior.py`.")
         return
 
     filtered, driver, start_date, end_date = show_filters(df, "driving")
