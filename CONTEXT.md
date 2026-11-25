@@ -59,7 +59,7 @@ id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING
   and add a line to the session log with what we did, whats broken, and whats next
 
 ## progress
-- [x] setup: venv, packages, github repo (earlysev7n/fleet-safety)
+- [x] setup: venv, packages, github repo (morningsev7n/fleet-safety)
 - [x] calibrate_eyes.py (was test_eyes.py) – EAR threshold set to 0.20
 - [x] db.py
 - [x] detector.py: eyes closed + alarm
