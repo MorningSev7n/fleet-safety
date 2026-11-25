@@ -1,4 +1,3 @@
-
 # ==========================================
 # FLEET SAFETY - SEVERITY CLASSIFICATION
 # ==========================================
@@ -8,16 +7,16 @@
 
 SEVERITY_RULES = {
     "EYES_CLOSED": {
-        "minimum": 1.5,
-        "medium": 2.0,
-        "high": 3.0,
+        "minimum": 1.0,
+        "medium": 1.5,
+        "high": 2.0,
         "maximum": 5.0,
     },
     "YAWN": {
         "minimum": 1.0,
-        "medium": 1.5,
-        "high": 2.5,
-        "maximum": 4.0,
+        "medium": 2.5,
+        "high": 4.0,
+        "maximum": 6.0,
     },
     "LOOK_AWAY": {
         "minimum": 2.0,
@@ -26,9 +25,9 @@ SEVERITY_RULES = {
         "maximum": 6.0,
     },
     "PHONE": {
-        "minimum": 1.0,
-        "medium": 2.0,
-        "high": 4.0,
+        "minimum": 0.5,
+        "medium": 1.0,
+        "high": 3.0,
         "maximum": 8.0,
     },
 }
