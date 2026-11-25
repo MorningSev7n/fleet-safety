@@ -1,73 +1,125 @@
 
 import io
 import xml.etree.ElementTree as ET
-from datetime import date
-from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from db import get_events
+from db import get_events, get_driving_events
+from scoring import calculate_driver_scores, SEVERITY_DEDUCTIONS
 
 
 # ============================================================
-# PAGE CONFIGURATION
+# 1. SETTINGS
+# ============================================================
+
+ATTENTION_SCORE = 75
+
+SEVERITY_ORDER = ["LOW", "MEDIUM", "HIGH"]
+
+SEVERITY_COLORS = {
+    "LOW": "#42B883",
+    "MEDIUM": "#E7A947",
+    "HIGH": "#E35D5B",
+}
+
+WEBCAM_EVENT_COLORS = {
+    "EYES_CLOSED": "#E35D5B",
+    "YAWN": "#E7A947",
+    "LOOK_AWAY": "#F08A4B",
+    "PHONE": "#A875D8",
+}
+
+DRIVING_EVENT_COLORS = {
+    "HARSH_BRAKING": "#E7A947",
+    "HARSH_CORNERING": "#4DA3FF",
+    "SPEEDING": "#E35D5B",
+}
+
+SCORE_COLORS = {
+    "Excellent": "#42B883",
+    "Good": "#4DA3FF",
+    "Needs Improvement": "#E7A947",
+    "Poor": "#E35D5B",
+}
+
+# measured_value means something different for each driving event.
+DRIVING_UNITS = {
+    "HARSH_BRAKING": "m/s²",
+    "HARSH_CORNERING": "m/s²",
+    "SPEEDING": "km/h",
+}
+
+WEBCAM_COLUMNS = [
+    "id",
+    "timestamp",
+    "driver_id",
+    "vehicle_id",
+    "event_type",
+    "duration_s",
+    "severity",
+]
+
+DRIVING_COLUMNS = [
+    "id",
+    "timestamp",
+    "driver_id",
+    "vehicle_id",
+    "event_type",
+    "measured_value",
+    "threshold_value",
+    "unit",
+    "severity",
+]
+
+# Friendly table headings. Exports keep the original column names.
+COLUMN_LABELS = {
+    "id": "ID",
+    "timestamp": "Time",
+    "driver_id": "Driver",
+    "vehicle_id": "Vehicle",
+    "event_type": "Event",
+    "duration_s": "Duration (s)",
+    "measured_value": "Measured",
+    "threshold_value": "Limit",
+    "unit": "Unit",
+    "severity": "Severity",
+}
+
+CHART_LAYOUT = {
+    "template": "plotly_dark",
+    "paper_bgcolor": "#1A202A",
+    "plot_bgcolor": "#1A202A",
+    "font": {"color": "#E5EAF0"},
+    "title": {"font": {"size": 15}},
+    "margin": {"l": 10, "r": 10, "t": 45, "b": 10},
+    "height": 320,
+}
+
+
+# ============================================================
+# 2. PAGE SETUP
 # ============================================================
 
 st.set_page_config(
     page_title="Fleet Safety Dashboard",
     page_icon="🚗",
     layout="wide",
-    initial_sidebar_state="collapsed",
 )
-
-
-# ============================================================
-# CUSTOM STYLING
-# ============================================================
 
 st.markdown(
     """
     <style>
-        .stApp {
-            background-color: #11151C;
-        }
-
         [data-testid="stMetric"] {
-            background-color: #202733;
-            border: 1px solid #303B49;
-            padding: 18px;
+            background-color: #1A202A;
+            border: 1px solid #2B3441;
+            padding: 16px;
             border-radius: 12px;
         }
 
         [data-testid="stMetricLabel"] {
             color: #A6B0BE;
-        }
-
-        [data-testid="stMetricValue"] {
-            color: #FFFFFF;
-        }
-
-        h1, h2, h3 {
-            color: #FFFFFF;
-        }
-
-        div[data-testid="stDownloadButton"] button {
-            width: 100%;
-            border-radius: 8px;
-        }
-
-        .dashboard-caption {
-            color: #A6B0BE;
-            font-size: 14px;
-        }
-
-        .section-title {
-            color: #FFFFFF;
-            font-size: 19px;
-            font-weight: 600;
-            margin-bottom: 10px;
         }
     </style>
     """,
@@ -76,35 +128,14 @@ st.markdown(
 
 
 # ============================================================
-# LOAD DATABASE
+# 3. LOAD DATA
 # ============================================================
 
 @st.cache_data(ttl=5)
-def load_events():
-    """Load events from the existing SQLite database."""
+def load_webcam_events():
+    """Load webcam events and fix column types."""
 
     df = get_events()
-
-    if df is None:
-        return pd.DataFrame()
-
-    df = df.copy()
-
-    required_columns = [
-        "id",
-        "timestamp",
-        "driver_id",
-        "vehicle_id",
-        "event_type",
-        "duration_s",
-        "severity",
-    ]
-
-    for column in required_columns:
-        if column not in df.columns:
-            raise ValueError(
-                f"Database is missing required column: {column}"
-            )
 
     df["timestamp"] = pd.to_datetime(
         df["timestamp"],
@@ -116,532 +147,224 @@ def load_events():
         errors="coerce",
     )
 
-    return df
+    return df.dropna(subset=["timestamp"])
 
 
-try:
-    events_df = load_events()
+@st.cache_data(ttl=5)
+def load_driving_events():
+    """Load driving events, fix column types, and add units."""
 
-except Exception as error:
-    st.error(f"Could not load database events: {error}")
-    st.info(
-        "Check that events.db exists and src/db.py "
-        "can connect to it."
-    )
-    st.stop()
+    df = get_driving_events()
 
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.title("🚗 Fleet Safety")
-st.markdown(
-    '<p class="dashboard-caption">'
-    'DRIVER MONITORING AND EVENT ANALYTICS'
-    '</p>',
-    unsafe_allow_html=True,
-)
-
-st.divider()
-
-
-# ============================================================
-# CHECK DATABASE
-# ============================================================
-
-if events_df.empty:
-
-    st.warning("No events found in the database.")
-
-    st.info(
-        "Run python seed.py from your project root "
-        "to generate synthetic dashboard data."
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        errors="coerce",
     )
 
-    st.stop()
-
-
-# ============================================================
-# GLOBAL FILTERS
-# ============================================================
-
-st.markdown("### 🔎 Dashboard Filters")
-
-filter_col1, filter_col2, filter_col3 = st.columns(
-    [1, 1, 2]
-)
-
-# Driver filter
-
-drivers = sorted(
-    events_df["driver_id"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-with filter_col1:
-
-    selected_driver = st.selectbox(
-        "Driver",
-        options=["All Drivers"] + drivers,
+    df["measured_value"] = pd.to_numeric(
+        df["measured_value"],
+        errors="coerce",
     )
 
-
-# Event type filter
-
-event_types = sorted(
-    events_df["event_type"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-with filter_col2:
-
-    selected_event = st.selectbox(
-        "Event Type",
-        options=["All Events"] + event_types,
+    df["threshold_value"] = pd.to_numeric(
+        df["threshold_value"],
+        errors="coerce",
     )
 
+    df["unit"] = df["event_type"].map(DRIVING_UNITS)
 
-# Date filter
-
-valid_timestamps = events_df["timestamp"].dropna()
-
-if valid_timestamps.empty:
-
-    st.error("No valid timestamps found in the database.")
-    st.stop()
-
-min_date = valid_timestamps.min().date()
-max_date = valid_timestamps.max().date()
-
-with filter_col3:
-
-    selected_dates = st.date_input(
-        "Date Range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date,
-    )
+    return df.dropna(subset=["timestamp"])
 
 
 # ============================================================
-# APPLY ALL FILTERS
+# 4. FILTERS
 # ============================================================
 
-filtered_df = events_df.copy()
+def show_filters(df, key):
+    """
+    Show driver, event type, and date filters.
 
-if selected_driver != "All Drivers":
+    Returns the filtered data, the selected driver,
+    and the selected start and end dates.
+    """
 
-    filtered_df = filtered_df[
-        filtered_df["driver_id"] == selected_driver
+    drivers = sorted(df["driver_id"].unique().tolist())
+    event_types = sorted(df["event_type"].unique().tolist())
+
+    min_date = df["timestamp"].min().date()
+    max_date = df["timestamp"].max().date()
+
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+
+        driver = st.selectbox(
+            "Driver",
+            ["All drivers"] + drivers,
+            key=f"{key}_driver",
+        )
+
+    with col2:
+
+        event_type = st.selectbox(
+            "Event type",
+            ["All events"] + event_types,
+            key=f"{key}_event",
+        )
+
+    with col3:
+
+        dates = st.date_input(
+            "Date range",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            key=f"{key}_dates",
+        )
+
+    # While a range is being picked, Streamlit
+    # briefly returns only the start date.
+    start_date = min_date
+    end_date = max_date
+
+    if len(dates) == 2:
+        start_date, end_date = dates
+
+    elif len(dates) == 1:
+        start_date = dates[0]
+        end_date = dates[0]
+
+    event_dates = df["timestamp"].dt.date
+
+    filtered = df[
+        (event_dates >= start_date)
+        & (event_dates <= end_date)
     ]
 
+    if driver != "All drivers":
 
-if selected_event != "All Events":
-
-    filtered_df = filtered_df[
-        filtered_df["event_type"] == selected_event
-    ]
-
-
-if isinstance(selected_dates, (tuple, list)):
-
-    if len(selected_dates) == 2:
-
-        start_date, end_date = selected_dates
-
-        filtered_df = filtered_df[
-            filtered_df["timestamp"].notna()
-            & (
-                filtered_df["timestamp"].dt.date >= start_date
-            )
-            & (
-                filtered_df["timestamp"].dt.date <= end_date
-            )
+        filtered = filtered[
+            filtered["driver_id"] == driver
         ]
 
-    elif len(selected_dates) == 1:
+    if event_type != "All events":
 
-        selected_date = selected_dates[0]
-
-        filtered_df = filtered_df[
-            filtered_df["timestamp"].dt.date == selected_date
+        filtered = filtered[
+            filtered["event_type"] == event_type
         ]
 
-else:
-
-    filtered_df = filtered_df[
-        filtered_df["timestamp"].dt.date == selected_dates
-    ]
+    return filtered, driver, start_date, end_date
 
 
 # ============================================================
-# KPI METRICS
+# 5. CHART HELPERS
 # ============================================================
 
-st.markdown("### 📊 Fleet Overview")
+def show_chart(fig, key):
+    """Apply the shared dark style and display a chart."""
 
-total_events = len(filtered_df)
-
-total_drivers = filtered_df["driver_id"].nunique()
-
-high_severity = (
-    filtered_df["severity"]
-    .astype(str)
-    .str.upper()
-    .eq("HIGH")
-    .sum()
-)
-
-if total_events > 0:
-
-    most_common_event = (
-        filtered_df["event_type"]
-        .value_counts()
-        .idxmax()
-    )
-
-else:
-
-    most_common_event = "N/A"
-
-
-metric1, metric2, metric3, metric4 = st.columns(4)
-
-metric1.metric(
-    "Total Events",
-    f"{total_events:,}",
-)
-
-metric2.metric(
-    "Drivers",
-    total_drivers,
-)
-
-metric3.metric(
-    "High Severity",
-    f"{high_severity:,}",
-)
-
-metric4.metric(
-    "Most Common Event",
-    most_common_event,
-)
-
-st.divider()
-
-
-# ============================================================
-# CHART CONFIGURATION
-# ============================================================
-
-chart_template = "plotly_dark"
-
-chart_layout = {
-    "template": chart_template,
-    "paper_bgcolor": "#202733",
-    "plot_bgcolor": "#202733",
-    "font": {"color": "#E5EAF0"},
-    "margin": {"l": 25, "r": 25, "t": 45, "b": 35},
-    "legend": {"orientation": "h"},
-}
-
-
-# ============================================================
-# CHART 1: EVENT DISTRIBUTION
-# ============================================================
-
-st.markdown("### 📌 Event Distribution")
-
-if not filtered_df.empty:
-
-    event_counts = (
-        filtered_df["event_type"]
-        .value_counts()
-        .reset_index()
-    )
-
-    event_counts.columns = [
-        "Event Type",
-        "Count",
-    ]
-
-    fig_events = px.pie(
-        event_counts,
-        names="Event Type",
-        values="Count",
-        hole=0.55,
-        title="Events by Type",
-        color="Event Type",
-        color_discrete_map={
-            "EYES_CLOSED": "#E35D5B",
-            "YAWN": "#E7A947",
-            "LOOK_AWAY": "#F08A4B",
-            "PHONE": "#A875D8",
-        },
-    )
-
-    fig_events.update_layout(**chart_layout)
+    fig.update_layout(**CHART_LAYOUT)
 
     st.plotly_chart(
-        fig_events,
-        use_container_width=True,
+        fig,
+        width="stretch",
+        key=key,
     )
 
-else:
 
-    st.info("No events available for this selection.")
+def show_type_chart(df, colors, key):
+    """Horizontal bar chart of events per event type."""
 
-
-st.divider()
-
-
-# ============================================================
-# CHART 2: EVENTS OVER TIME
-# ============================================================
-
-st.markdown("### 📈 Events Over Time")
-
-if not filtered_df.empty:
-
-    time_data = filtered_df.dropna(
-        subset=["timestamp"]
-    ).copy()
-
-    if not time_data.empty:
-
-        time_data["Date"] = (
-            time_data["timestamp"].dt.date
-        )
-
-        daily_events = (
-            time_data.groupby("Date")
-            .size()
-            .reset_index(name="Event Count")
-        )
-
-        fig_time = px.line(
-            daily_events,
-            x="Date",
-            y="Event Count",
-            markers=True,
-            title="Daily Recorded Events",
-        )
-
-        fig_time.update_traces(
-            line=dict(color="#4DA3FF", width=3),
-            marker=dict(size=8),
-        )
-
-        fig_time.update_layout(**chart_layout)
-
-        st.plotly_chart(
-            fig_time,
-            use_container_width=True,
-        )
-
-    else:
-
-        st.info("No valid timestamps for this selection.")
-
-else:
-
-    st.info("No events available for this selection.")
-
-
-st.divider()
-
-
-# ============================================================
-# CHART 3: DRIVER COMPARISON
-# ============================================================
-
-st.markdown("### 👤 Driver Comparison")
-
-if not filtered_df.empty:
-
-    driver_data = (
-        filtered_df.groupby("driver_id")
-        .size()
-        .reset_index(name="Event Count")
-        .sort_values("Event Count", ascending=False)
-    )
-
-    fig_drivers = px.bar(
-        driver_data,
-        x="driver_id",
-        y="Event Count",
-        color="Event Count",
-        title="Events Recorded per Driver",
-        color_continuous_scale=[
-            "#305B8C",
-            "#4DA3FF",
-        ],
-        text="Event Count",
-    )
-
-    fig_drivers.update_traces(
-        textposition="outside"
-    )
-
-    fig_drivers.update_layout(**chart_layout)
-
-    st.plotly_chart(
-        fig_drivers,
-        use_container_width=True,
-    )
-
-else:
-
-    st.info("No events available for this selection.")
-
-
-st.divider()
-
-
-# ============================================================
-# CHART 4: SEVERITY BREAKDOWN
-# ============================================================
-
-st.markdown("### ⚠️ Severity Breakdown")
-
-if not filtered_df.empty:
-
-    severity_data = (
-        filtered_df["severity"]
-        .fillna("UNKNOWN")
-        .astype(str)
-        .str.upper()
+    counts = (
+        df["event_type"]
         .value_counts()
-        .reset_index()
+        .rename_axis("Event")
+        .reset_index(name="Events")
     )
 
-    severity_data.columns = [
-        "Severity",
-        "Count",
-    ]
+    fig = px.bar(
+        counts,
+        x="Events",
+        y="Event",
+        orientation="h",
+        color="Event",
+        color_discrete_map=colors,
+        text="Events",
+        title="Events by type",
+    )
 
-    fig_severity = px.bar(
-        severity_data,
+    fig.update_layout(
+        showlegend=False,
+        yaxis={"categoryorder": "total ascending", "title": ""},
+    )
+
+    show_chart(fig, key)
+
+
+def show_severity_chart(df, key):
+    """Bar chart of events per severity, always LOW → HIGH."""
+
+    counts = (
+        df["severity"]
+        .value_counts()
+        .reindex(SEVERITY_ORDER, fill_value=0)
+        .rename_axis("Severity")
+        .reset_index(name="Events")
+    )
+
+    fig = px.bar(
+        counts,
         x="Severity",
-        y="Count",
+        y="Events",
         color="Severity",
-        title="Events by Severity Level",
-        color_discrete_map={
-            "HIGH": "#E35D5B",
-            "MEDIUM": "#E7A947",
-            "LOW": "#42B883",
-            "UNKNOWN": "#8993A1",
-        },
-        text="Count",
+        color_discrete_map=SEVERITY_COLORS,
+        text="Events",
+        title="Events by severity",
     )
 
-    fig_severity.update_traces(
-        textposition="outside"
+    fig.update_layout(
+        showlegend=False,
+        xaxis={"title": ""},
     )
 
-    fig_severity.update_layout(**chart_layout)
+    show_chart(fig, key)
 
-    st.plotly_chart(
-        fig_severity,
-        use_container_width=True,
+
+def show_daily_chart(df, key):
+    """Bar chart of events per day."""
+
+    counts = (
+        df["timestamp"].dt.date
+        .value_counts()
+        .sort_index()
+        .rename_axis("Date")
+        .reset_index(name="Events")
     )
 
-else:
+    fig = px.bar(
+        counts,
+        x="Date",
+        y="Events",
+        title="Events per day",
+    )
 
-    st.info("No events available for this selection.")
+    fig.update_traces(
+        marker_color="#4DA3FF"
+    )
 
+    fig.update_layout(
+        xaxis={"title": ""},
+    )
 
-st.divider()
+    show_chart(fig, key)
 
 
 # ============================================================
-# FILTERED EVENT TABLE
+# 6. RECORDS AND EXPORT
 # ============================================================
 
-st.markdown("### 📋 Recorded Events")
-
-st.caption(
-    f"Showing {len(filtered_df):,} filtered records."
-)
-
-display_columns = [
-    "id",
-    "timestamp",
-    "driver_id",
-    "vehicle_id",
-    "event_type",
-    "duration_s",
-    "severity",
-]
-
-st.dataframe(
-    filtered_df[display_columns].sort_values(
-        "timestamp",
-        ascending=False,
-        na_position="last",
-    ),
-    use_container_width=True,
-    hide_index=True,
-)
-
-
-st.divider()
-
-
-# ============================================================
-# EXPORT FUNCTIONS
-# ============================================================
-
-st.markdown("### 📥 Export Filtered Data")
-
-st.caption(
-    "Download only the records matching your current filters."
-)
-
-export_df = filtered_df[display_columns].copy()
-
-
-# CSV export
-
-csv_data = export_df.to_csv(
-    index=False
-).encode("utf-8")
-
-
-# TSV export
-
-tsv_data = export_df.to_csv(
-    index=False,
-    sep="\t",
-).encode("utf-8")
-
-
-# XLSX export
-
-xlsx_buffer = io.BytesIO()
-
-with pd.ExcelWriter(
-    xlsx_buffer,
-    engine="openpyxl",
-) as writer:
-
-    export_df.to_excel(
-        writer,
-        index=False,
-        sheet_name="Fleet Events",
-    )
-
-xlsx_data = xlsx_buffer.getvalue()
-
-
-# XML export
-
-def export_xml(df):
+def to_xml(df):
+    """Convert a table to XML, one <event> per row."""
 
     root = ET.Element("fleet_events")
 
@@ -649,19 +372,11 @@ def export_xml(df):
 
     for _, row in df.iterrows():
 
-        event = ET.SubElement(
-            root,
-            "event",
-        )
+        event = ET.SubElement(root, "event")
 
-        for column in display_columns:
+        for column, value in row.items():
 
-            element = ET.SubElement(
-                event,
-                column,
-            )
-
-            value = row[column]
+            element = ET.SubElement(event, column)
 
             if pd.isna(value):
                 element.text = ""
@@ -670,10 +385,7 @@ def export_xml(df):
             else:
                 element.text = str(value)
 
-    ET.indent(
-        root,
-        space="    ",
-    )
+    ET.indent(root, space="    ")
 
     return ET.tostring(
         root,
@@ -682,75 +394,329 @@ def export_xml(df):
     )
 
 
-xml_data = export_xml(export_df)
+def to_xlsx(df):
+    """Convert a table to an Excel file in memory."""
+
+    buffer = io.BytesIO()
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+
+        df.to_excel(
+            writer,
+            index=False,
+            sheet_name="Events",
+        )
+
+    return buffer.getvalue()
+
+
+def show_records(df, columns, file_name, key):
+    """Show the filtered records and the four export buttons."""
+
+    records = df[columns]
+
+    st.markdown("#### 📋 Records")
+
+    with st.expander(f"View {len(records):,} filtered records"):
+
+        st.dataframe(
+            records.rename(columns=COLUMN_LABELS),
+            width="stretch",
+            hide_index=True,
+        )
+
+    st.caption("Exports include only the records that match your filters.")
+
+    exports = [
+        ("📄 CSV", records.to_csv(index=False), "csv", "text/csv"),
+        ("📑 TSV", records.to_csv(index=False, sep="\t"), "tsv", "text/tab-separated-values"),
+        ("📊 XLSX", to_xlsx(records), "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ("🗂️ XML", to_xml(records), "xml", "application/xml"),
+    ]
+
+    for column, (label, data, extension, mime) in zip(st.columns(4), exports):
+
+        with column:
+
+            st.download_button(
+                label,
+                data=data,
+                file_name=f"{file_name}.{extension}",
+                mime=mime,
+                key=f"{key}_{extension}",
+                width="stretch",
+            )
 
 
 # ============================================================
-# DOWNLOAD BUTTONS
+# 7. TAB: DRIVER MONITORING (WEBCAM)
 # ============================================================
 
-download1, download2, download3, download4 = st.columns(4)
+def show_monitoring_tab(df):
 
-with download1:
+    if df.empty:
 
-    st.download_button(
-        label="📄 CSV",
-        data=csv_data,
-        file_name="fleet_events.csv",
-        mime="text/csv",
-        use_container_width=True,
-        disabled=export_df.empty,
-    )
+        st.info("No webcam events yet. Run `python seed.py` or start the detector.")
+        return
 
+    filtered, _, _, _ = show_filters(df, "webcam")
 
-with download2:
+    if filtered.empty:
 
-    st.download_button(
-        label="📑 TSV",
-        data=tsv_data,
-        file_name="fleet_events.tsv",
-        mime="text/tab-separated-values",
-        use_container_width=True,
-        disabled=export_df.empty,
-    )
+        st.info("No events match these filters.")
+        return
 
+    # ----------------------------------
+    # KPI METRICS
+    # ----------------------------------
 
-with download3:
+    high_events = (filtered["severity"] == "HIGH").sum()
 
-    st.download_button(
-        label="📊 XLSX",
-        data=xlsx_data,
-        file_name="fleet_events.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        disabled=export_df.empty,
-    )
+    most_common = filtered["event_type"].value_counts().idxmax()
 
+    metric1, metric2, metric3, metric4 = st.columns(4)
 
-with download4:
+    metric1.metric("Total events", f"{len(filtered):,}")
+    metric2.metric("High severity", f"{high_events:,}")
+    metric3.metric("Average duration", f"{filtered['duration_s'].mean():.1f} s")
+    metric4.metric("Most common", most_common)
 
-    st.download_button(
-        label="🗂️ XML",
-        data=xml_data,
-        file_name="fleet_events.xml",
-        mime="application/xml",
-        use_container_width=True,
-        disabled=export_df.empty,
+    # ----------------------------------
+    # CHARTS (2 × 2)
+    # ----------------------------------
+
+    left, right = st.columns(2)
+
+    with left:
+        show_type_chart(filtered, WEBCAM_EVENT_COLORS, "webcam_types")
+
+    with right:
+        show_severity_chart(filtered, "webcam_severity")
+
+    left, right = st.columns(2)
+
+    with left:
+        show_daily_chart(filtered, "webcam_daily")
+
+    with right:
+
+        driver_counts = (
+            filtered.groupby(["driver_id", "severity"])
+            .size()
+            .reset_index(name="Events")
+        )
+
+        fig = px.bar(
+            driver_counts,
+            x="driver_id",
+            y="Events",
+            color="severity",
+            color_discrete_map=SEVERITY_COLORS,
+            category_orders={"severity": SEVERITY_ORDER},
+            title="Events per driver",
+        )
+
+        fig.update_layout(
+            xaxis={"title": ""},
+            legend={"title": "", "orientation": "h", "y": -0.15},
+        )
+
+        show_chart(fig, "webcam_drivers")
+
+    # ----------------------------------
+    # RECORDS AND EXPORT
+    # ----------------------------------
+
+    show_records(
+        filtered,
+        WEBCAM_COLUMNS,
+        "webcam_events",
+        "webcam",
     )
 
 
 # ============================================================
-# FOOTER
+# 8. TAB: DRIVING BEHAVIOUR
 # ============================================================
 
-st.divider()
+def show_driving_tab(df):
 
-st.markdown(
-    """
-    <div style="text-align:center; color:#8993A1;">
-        Fleet Safety | Driver Monitoring System<br>
-        Powered by Python, Streamlit, SQLite and Plotly
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+    if df.empty:
+
+        st.info("No driving events yet. Run `python seed_behavior.py`.")
+        return
+
+    filtered, driver, start_date, end_date = show_filters(df, "driving")
+
+    # ----------------------------------
+    # DRIVER SCORES
+    # ----------------------------------
+
+    if driver == "All drivers":
+        score_drivers = df["driver_id"].unique().tolist()
+    else:
+        score_drivers = [driver]
+
+    # Drivers with no events in the selection keep a score of 100.
+    scores = calculate_driver_scores(
+        filtered,
+        drivers=score_drivers,
+        start_date=start_date,
+        end_date=end_date,
+    ).sort_values(
+        ["score", "driver_id"],
+        ascending=[False, True],
+    )
+
+    need_attention = scores[scores["score"] < ATTENTION_SCORE]
+
+    high_events = (filtered["severity"] == "HIGH").sum()
+
+    # ----------------------------------
+    # KPI METRICS
+    # ----------------------------------
+
+    metric1, metric2, metric3, metric4 = st.columns(4)
+
+    metric1.metric("Average score", f"{scores['score'].mean():.0f} / 100")
+    metric2.metric("Driving events", f"{len(filtered):,}")
+    metric3.metric("High severity", f"{high_events:,}")
+    metric4.metric("Need attention", f"{len(need_attention):,}")
+
+    # One summary message instead of one warning per driver.
+    if need_attention.empty:
+
+        st.success(f"All drivers are at or above {ATTENTION_SCORE}/100.")
+
+    else:
+
+        names = ", ".join(
+            f"{row.driver_id} ({row.score})"
+            for row in need_attention.itertuples()
+        )
+
+        st.warning(f"Below {ATTENTION_SCORE}/100: {names}")
+
+    # ----------------------------------
+    # SCORES: CHART + LEADERBOARD
+    # ----------------------------------
+
+    left, right = st.columns(2)
+
+    with left:
+
+        fig = px.bar(
+            scores.sort_values("score"),
+            x="score",
+            y="driver_id",
+            orientation="h",
+            color="classification",
+            color_discrete_map=SCORE_COLORS,
+            text="score",
+            title="Driver scores",
+        )
+
+        fig.update_layout(
+            xaxis={"range": [0, 110], "title": "Score out of 100"},
+            yaxis={"title": ""},
+            legend={"title": "", "orientation": "h", "y": -0.25},
+        )
+
+        show_chart(fig, "driving_scores")
+
+    with right:
+
+        st.markdown("##### 🏆 Leaderboard")
+
+        leaderboard = scores[[
+            "driver_id",
+            "score",
+            "classification",
+            "low_events",
+            "medium_events",
+            "high_events",
+        ]].rename(columns={
+            "driver_id": "Driver",
+            "score": "Score",
+            "classification": "Rating",
+            "low_events": "Low",
+            "medium_events": "Medium",
+            "high_events": "High",
+        })
+
+        st.dataframe(
+            leaderboard,
+            width="stretch",
+            hide_index=True,
+        )
+
+        deductions = ", ".join(
+            f"{severity} −{points}"
+            for severity, points in SEVERITY_DEDUCTIONS.items()
+        )
+
+        st.caption(
+            f"Each driver starts at 100. Deductions: {deductions}. "
+            "Synthetic demo rules, not a certified safety rating."
+        )
+
+    if filtered.empty:
+
+        st.info("No driving events match these filters.")
+        return
+
+    # ----------------------------------
+    # EVENT CHARTS
+    # ----------------------------------
+
+    left, middle, right = st.columns(3)
+
+    with left:
+        show_type_chart(filtered, DRIVING_EVENT_COLORS, "driving_types")
+
+    with middle:
+        show_severity_chart(filtered, "driving_severity")
+
+    with right:
+        show_daily_chart(filtered, "driving_daily")
+
+    # ----------------------------------
+    # RECORDS AND EXPORT
+    # ----------------------------------
+
+    show_records(
+        filtered,
+        DRIVING_COLUMNS,
+        "driving_events",
+        "driving",
+    )
+
+
+# ============================================================
+# 9. PAGE LAYOUT
+# ============================================================
+
+st.title("🚗 Fleet Safety Dashboard")
+
+st.caption("Driver monitoring and driving behaviour analytics · synthetic demo data")
+
+try:
+
+    webcam_df = load_webcam_events()
+    driving_df = load_driving_events()
+
+except Exception as error:
+
+    st.error(f"Could not load the database: {error}")
+    st.stop()
+
+monitoring_tab, driving_tab = st.tabs([
+    "👁️ Driver Monitoring",
+    "🚦 Driving Behaviour",
+])
+
+with monitoring_tab:
+    show_monitoring_tab(webcam_df)
+
+with driving_tab:
+    show_driving_tab(driving_df)

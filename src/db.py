@@ -28,7 +28,7 @@ def create_table():
             )
         """)
 
-        # New driving behaviour events table
+        # Separate driving behaviour events table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS driving_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +44,7 @@ def create_table():
 
 
 def save_event(driver_id, vehicle_id, event_type, duration_s, severity):
-    """Save a new webcam event with the current timestamp."""
+    """Save a webcam event with the current timestamp."""
 
     timestamp = datetime.now().isoformat(timespec="seconds")
 
@@ -88,10 +88,12 @@ def save_driving_event(
     measured_value,
     threshold_value,
     severity,
+    timestamp=None,
 ):
-    """Save a new synthetic driving behaviour event."""
+    """Save one driving behaviour event."""
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    if timestamp is None:
+        timestamp = datetime.now().isoformat(timespec="seconds")
 
     with sqlite3.connect(DB_NAME) as conn:
         conn.execute("""
@@ -114,6 +116,42 @@ def save_driving_event(
             threshold_value,
             severity
         ))
+
+
+def save_driving_events(events):
+    """Save multiple driving behaviour events in one transaction."""
+
+    rows = []
+
+    for event in events:
+        timestamp = event.get("timestamp")
+
+        if timestamp is None:
+            timestamp = datetime.now().isoformat(timespec="seconds")
+
+        rows.append((
+            timestamp,
+            event["driver_id"],
+            event["vehicle_id"],
+            event["event_type"],
+            event["measured_value"],
+            event["threshold_value"],
+            event["severity"],
+        ))
+
+    with sqlite3.connect(DB_NAME) as conn:
+        conn.executemany("""
+            INSERT INTO driving_events (
+                timestamp,
+                driver_id,
+                vehicle_id,
+                event_type,
+                measured_value,
+                threshold_value,
+                severity
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, rows)
 
 
 def get_driving_events():
