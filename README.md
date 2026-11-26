@@ -10,8 +10,8 @@ All data is synthetic, and every tool used is free and open source.
 
 ## What you need
 
-- A **Mac** with a webcam. Spoken alerts use the macOS `say` and `afplay` commands.
-- **Python 3.11**. Check with `python3.11 --version`. If it's missing, run `brew install python@3.11`.
+- A **Mac or Windows** laptop with a webcam. It's tested on Mac. Windows support is new and hasn't been tested yet, so please report whether the alarm sounds.
+- **Python 3.11**. Mac: check with `python3.11 --version`, and if it's missing, run `brew install python@3.11`. Windows: install it from python.org, then check with `py -3.11 --version`.
 - Internet access the first time, to install packages and download the phone-detection model (5 MB).
 
 ## Setup (one time, about 5 minutes)
@@ -22,6 +22,13 @@ cd fleet-safety
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+On **Windows**, replace the two venv lines with:
+
+```bat
+py -3.11 -m venv .venv
+.venv\Scripts\activate
 ```
 
 Download the YOLO phone-detection model into `models/`:
@@ -38,7 +45,7 @@ Every new terminal starts the same way:
 
 ```bash
 cd fleet-safety
-source .venv/bin/activate
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 ```
 
 **1. Load demo data** (run once only: `seed.py` adds 40 more events every time it runs):
@@ -56,7 +63,7 @@ This adds 40 fake webcam events and 40 fake driving events (braking, cornering, 
 python src/detector.py
 ```
 
-The first time, macOS asks for camera access for Terminal. Allow it, then run the command again.
+The first time, your computer asks for camera access. Allow it, then run the command again if needed.
 For the first 5 seconds, look at the camera normally while it calibrates to your eyes.
 
 | Key | Action |
@@ -70,6 +77,7 @@ For the first 5 seconds, look at the camera normally while it calibrates to your
 streamlit run src/dashboard.py
 ```
 
+The first time, Streamlit asks for an email in the terminal. Just press **Enter** to skip.
 It opens in your browser. To view it on a phone, open the **Network URL** that Streamlit prints. The phone must be on the same Wi-Fi.
 
 ## Try it (demo flow)
@@ -95,9 +103,9 @@ It opens in your browser. To view it on a phone, open the **Network URL** that S
 
 | Problem | Fix |
 |---|---|
-| Black window or "could not open camera" | System Settings → Privacy & Security → Camera → turn on Terminal (or your editor), then restart it |
+| Black window or "could not open camera" | Mac: System Settings → Privacy & Security → Camera → turn on Terminal (or your editor). Windows: Settings → Privacy & security → Camera → allow desktop apps. Then restart the terminal |
 | Alerts fire too easily or not at all | Press **C** to recalibrate. Sit facing the camera in good light |
-| No sound | Check the Mac volume and that it isn't muted |
+| No sound | Check the volume and that it isn't muted |
 | Phone can't open the dashboard | Use the **Network URL**, not the Local one, with both devices on the same Wi-Fi |
 | `Could not load YOLO model` | Run the model download command from Setup again |
 | Dashboard is empty | Run the two `seed` scripts |
@@ -108,6 +116,7 @@ It opens in your browser. To view it on a phone, open the **Network URL** that S
 python tests/test_calibration.py
 python tests/test_perclos.py
 python tests/test_db_snapshot.py
+python tests/test_alarm_commands.py
 ```
 
 ## Folders
