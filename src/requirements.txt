@@ -1,0 +1,8 @@
+# Streamlit Community Cloud installs this file (it sits next to dashboard.py).
+# Only what the dashboard imports, so the cloud skips OpenCV/MediaPipe/YOLO.
+# Pins match the root requirements.txt.
+pandas==3.0.6
+streamlit==1.60.0
+plotly==7.1.0
+openpyxl==3.1.5
+psycopg[binary]==3.3.9

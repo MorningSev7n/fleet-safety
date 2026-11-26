@@ -1,6 +1,7 @@
 # Checks the snapshot column upgrade and snapshot saving.
 # Run from the project folder: python tests/test_db_snapshot.py [scratch_folder]
 
+import os
 import sqlite3
 import sys
 import tempfile
@@ -8,6 +9,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# Always test the local SQLite file, never the shared Supabase database.
+os.environ["DATABASE_URL"] = ""
 
 sys.path.insert(0, "src")
 import db

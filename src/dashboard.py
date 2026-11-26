@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from db import ROOT, get_events, get_driving_events
+from db import get_events, get_driving_events, get_latest_snapshot
 from scoring import calculate_driver_scores, SEVERITY_DEDUCTIONS
 
 
@@ -457,15 +457,15 @@ def show_live_now():
 
         with picture_col:
 
-            # Seeded events have no picture, so look for the newest one that has.
-            with_pictures = df[df["snapshot"].notna()]
-            picture = ROOT / with_pictures.iloc[0]["snapshot"] if not with_pictures.empty else None
+            # Seeded events have no picture, so ask for the newest one that has.
+            # It comes from the database (cloud) or the local file (offline).
+            newest = get_latest_snapshot()
 
-            if picture is not None and picture.exists():
+            if newest is not None:
 
                 # Inline picture instead of st.image: st.image's /media link
                 # returns an error with this Streamlit + Starlette pair.
-                encoded = base64.b64encode(picture.read_bytes()).decode()
+                encoded = base64.b64encode(newest["jpeg"]).decode()
 
                 st.markdown(
                     f'<img src="data:image/jpeg;base64,{encoded}" '
@@ -473,8 +473,7 @@ def show_live_now():
                     unsafe_allow_html=True,
                 )
 
-                newest = with_pictures.iloc[0]
-                st.caption(f"{newest['event_type']} · {newest['timestamp']:%H:%M:%S}")
+                st.caption(f"{newest['event_type']} · {pd.Timestamp(newest['timestamp']):%H:%M:%S}")
 
             else:
 
