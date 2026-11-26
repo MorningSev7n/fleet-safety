@@ -7,6 +7,9 @@ Detects driver fatigue and phone use from a webcam, alerts in real time, and log
 - **Camera HUD** – status bar (ATTENTIVE / DROWSY / ALERT / NO FACE), countdown rings, eye/mouth/head gauges, red pulsing border, "Logged" toast
 - **Per-driver eye calibration** – 5 s at startup sets the eye limit to 75 % of your normal EAR
 - **Live dashboard** – "Live now" section and charts refresh every 2 s
+- ✱ **Two dashboard tabs** – *Driver monitoring* (webcam events) and *Driving behaviour* (braking, cornering, speeding)
+- ✱ **Driver scores** – each driver starts at 100 and loses points per LOW / MEDIUM / HIGH event; drivers below the attention score are flagged
+- ✱ **Filters + exports** – filter by driver, event type and date; download records as CSV, TSV, Excel or XML
 - **Event snapshots** – a photo of each event, shown on the dashboard (`data/snapshots/`)
 - **PERCLOS fatigue meter** – share of the last 60 s with eyes closed; "TAKE A BREAK" + FATIGUE event above 15 %
 - **Spoken alerts** – chime for the first 2 s, then siren + a spoken warning ("Wake up. Eyes on the road.", "Put the phone down.")
@@ -36,13 +39,23 @@ python src/detector.py            # webcam monitor, C = recalibrate, Q = quit
 streamlit run src/dashboard.py
 ```
 
+✱ ## Tests
+
+```bash
+python tests/test_calibration.py
+python tests/test_perclos.py
+python tests/test_db_snapshot.py
+```
+
 ## Folders
 
 ```
 src/              the app: detector, dashboard, db, severity, scoring
-src/detection/    face checks (EAR/MAR/head pose), phone check, alarm
+src/detection/    face checks (EAR/MAR/head pose), phone check, alarm, HUD   ✱
 scripts/          seed data + eye calibration, run once by hand
-data/             events.db (not in git)
+tests/            plain-assert checks, run with python                      ✱
+.streamlit/       dashboard dark theme                                       ✱
+data/             events.db + snapshots (not in git)                        ✱
 models/           yolo26n.pt (not in git)
 ```
 
