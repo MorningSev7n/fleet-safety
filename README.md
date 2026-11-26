@@ -1,43 +1,108 @@
-# Fleet safety - Driver fatigue & Distraction Detection
+# Fleet Safety – Driver Fatigue & Distraction Detection
 
-Detects driver fatigue and phone use from a webcam, alerts in real time, and logs events to a dashboard.
+GECO Build Week, Solution 25 (Fleet Safety).
 
-## Features
+A laptop webcam watches the driver. If they close their eyes, yawn, look away or pick up a phone, the app sounds an alarm and speaks a warning. Each event is saved with a photo and appears on a live dashboard, which you can also open on a phone.
 
-- **Camera HUD** – status bar (ATTENTIVE / DROWSY / ALERT / NO FACE), countdown rings, eye/mouth/head gauges, red pulsing border, "Logged" toast
-- **Per-driver eye calibration** – 5 s at startup sets the eye limit to 75 % of your normal EAR
-- **Live dashboard** – "Live now" section and charts refresh every 2 s
-- **Two dashboard tabs** – *Driver monitoring* (webcam events) and *Driving behaviour* (braking, cornering, speeding)
-- **Driver scores** – each driver starts at 100 and loses points per LOW / MEDIUM / HIGH event; drivers below the attention score are flagged
-- **Filters + exports** – filter by driver, event type and date; download records as CSV, TSV, Excel or XML
-- **Event snapshots** – a photo of each event, shown on the dashboard (`data/snapshots/`)
-- **PERCLOS fatigue meter** – share of the last 60 s with eyes closed; "TAKE A BREAK" + FATIGUE event above 15 %
-- **Spoken alerts** – chime for the first 2 s, then siren + a spoken warning ("Wake up. Eyes on the road.", "Put the phone down.")
+**Who it's for:** an SME fleet owner who can't ride along with every driver. The dashboard shows who is tired or distracted, when it happens and how serious it is, so the owner knows which drivers need coaching.
 
-## Keys (camera window)
+All data is synthetic, and every tool used is free and open source.
 
-- **C** – recalibrate (new driver)
-- **Q** – quit
+---
 
-## Setup (Python 3.11)
+## What you need
+
+- A **Mac** with a webcam. Spoken alerts use the macOS `say` and `afplay` commands.
+- **Python 3.11**. Check with `python3.11 --version`. If it's missing, run `brew install python@3.11`.
+- Internet access the first time, to install packages and download the phone-detection model (5 MB).
+
+## Setup (one time, about 5 minutes)
 
 ```bash
+git clone https://github.com/MorningSev7n/fleet-safety.git
+cd fleet-safety
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Put `yolo26n.pt` in `models/`. Optional: copy `.env.example` to `.env`.
-
-## Run (from the project folder)
+Download the YOLO phone-detection model into `models/`:
 
 ```bash
-python scripts/seed.py            # 40 fake webcam events
-python scripts/seed_behavior.py   # 40 fake driving events
-python scripts/calibrate_eyes.py  # optional: check your EAR threshold
-python src/detector.py            # webcam monitor, C = recalibrate, Q = quit
+python -c "from ultralytics import YOLO; YOLO('models/yolo26n.pt')"
+```
+
+You don't need a `.env` file. `.env.example` is for an optional Gemini feature that isn't used yet.
+
+## Run
+
+Every new terminal starts the same way:
+
+```bash
+cd fleet-safety
+source .venv/bin/activate
+```
+
+**1. Load demo data** (run once only: `seed.py` adds 40 more events every time it runs):
+
+```bash
+python scripts/seed.py
+python scripts/seed_behavior.py
+```
+
+This adds 40 fake webcam events and 40 fake driving events (braking, cornering, speeding).
+
+**2. Start the webcam monitor** (terminal 1):
+
+```bash
+python src/detector.py
+```
+
+The first time, macOS asks for camera access for Terminal. Allow it, then run the command again.
+For the first 5 seconds, look at the camera normally while it calibrates to your eyes.
+
+| Key | Action |
+|---|---|
+| **C** | Recalibrate (a new driver sits down) |
+| **Q** | Quit |
+
+**3. Start the dashboard** (terminal 2):
+
+```bash
 streamlit run src/dashboard.py
 ```
+
+It opens in your browser. To view it on a phone, open the **Network URL** that Streamlit prints. The phone must be on the same Wi-Fi.
+
+## Try it (demo flow)
+
+1. Close your eyes for about 1.5 seconds. You hear a chime, then a siren and "Wake up. Eyes on the road."
+2. Hold a phone up near your face. It's flagged as PHONE with the warning "Put the phone down."
+3. Yawn, or turn your head away. These are flagged too.
+4. On the dashboard, the event shows under **Live now** within about 3 seconds, with its photo.
+5. **Driver monitoring** tab: webcam events by day and by type, KPIs, records and export.
+6. **Driving behaviour** tab: driver scores (start at 100, minus points per event), events by type and by day.
+7. Filter by driver, event type or date. Every chart updates. Download the records as CSV, TSV, Excel or XML.
+
+## Features
+
+- **Fatigue and distraction detection:** eyes closed (eye aspect ratio), yawning, head turned away, phone use (YOLO)
+- **Per-driver calibration:** sets the eye limit to 75% of your normal eye openness, so glasses and narrow eyes work
+- **PERCLOS fatigue meter:** the share of the last 60 seconds with eyes closed. Above 15%, it shows "TAKE A BREAK" and logs a FATIGUE event
+- **Real-time alert:** a chime for the first 2 seconds, then a siren and a spoken warning
+- **Camera HUD:** shows the status (ATTENTIVE / DROWSY / ALERT / NO FACE), countdown rings, gauges, and a confirmation each time an event is logged
+- **Live dashboard:** 4 charts, 3 filters, driver scores, event photos, and export to 4 formats
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Black window or "could not open camera" | System Settings → Privacy & Security → Camera → turn on Terminal (or your editor), then restart it |
+| Alerts fire too easily or not at all | Press **C** to recalibrate. Sit facing the camera in good light |
+| No sound | Check the Mac volume and that it isn't muted |
+| Phone can't open the dashboard | Use the **Network URL**, not the Local one, with both devices on the same Wi-Fi |
+| `Could not load YOLO model` | Run the model download command from Setup again |
+| Dashboard is empty | Run the two `seed` scripts |
 
 ## Tests
 
@@ -50,13 +115,15 @@ python tests/test_db_snapshot.py
 ## Folders
 
 ```
-src/              the app: detector, dashboard, db, severity, scoring
-src/detection/    face checks (EAR/MAR/head pose), phone check, alarm, HUD
-scripts/          seed data + eye calibration, run once by hand
+src/              the app: detector, dashboard, database, severity, scoring
+src/detection/    face checks, phone check, alarm, HUD
+scripts/          demo data + eye-calibration check (run by hand)
 tests/            plain-assert checks, run with python
 .streamlit/       dashboard dark theme
-data/             events.db + snapshots (not in git)
-models/           yolo26n.pt (not in git)
+data/             events.db + snapshots (created on first run, not in git)
+models/           yolo26n.pt (downloaded in Setup, not in git)
 ```
 
-Open the dashboard on your phone with the "Network URL" Streamlit prints (same Wi-Fi).
+## Free stack
+
+Python, OpenCV, MediaPipe Face Mesh, Ultralytics YOLO, SQLite, Streamlit, Plotly, and pandas, all run locally.
