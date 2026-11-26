@@ -51,6 +51,23 @@ The detector always runs on the laptop. To show its events and photos on the onl
 
 **Back to offline:** leave `DATABASE_URL=` empty in `.env`. The detector and the local dashboard then use `data/events.db` again.
 
+## Next.js dashboard (new, in `web/`)
+
+A cleaner dashboard that reads the same Supabase database as the Streamlit one. The Streamlit app keeps running alongside it until this one is ready. It needs Node.js 20 or newer.
+
+Run it on your laptop:
+
+```bash
+cd web
+cp .env.example .env.local     # then set DATABASE_URL= to the same value as in .env
+npm install
+npm run dev                    # open http://localhost:3000
+```
+
+`npm test` checks the driver-score rules (they match `src/scoring.py`). The database is read only on the server, so `DATABASE_URL` never reaches the browser.
+
+Deploy on Vercel: import this repo, set **Root Directory** to `web`, add the environment variable `DATABASE_URL` (the Supabase Session pooler string), and deploy.
+
 ## Run
 
 Every new terminal starts the same way:
