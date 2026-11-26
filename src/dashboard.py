@@ -85,6 +85,29 @@ CHART_LAYOUT = {
 }
 
 
+def nice(value):
+    """EYES_CLOSED -> Eyes closed. For display only; exports keep raw values."""
+
+    return str(value).replace("_", " ").capitalize()
+
+
+def show_table(df, **kwargs):
+    """Show events with friendly labels and coloured severity."""
+
+    df = df.copy()
+
+    for column in ("event_type", "severity"):
+        df[column] = df[column].map(nice)
+
+    styled = (
+        df.rename(columns=COLUMN_LABELS)
+        .style.format(precision=2, na_rep="—")
+        .map(lambda v: f"color: {SEVERITY_COLORS.get(v.upper(), 'inherit')}", subset=["Severity"])
+    )
+
+    st.dataframe(styled, width="stretch", hide_index=True, **kwargs)
+
+
 # ============================================================
 # 2. PAGE SETUP
 # ============================================================
@@ -98,6 +121,10 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+        /* Shrink big numbers on narrow screens instead of cutting them off. */
+        [data-testid="stMetricValue"] {
+            font-size: clamp(1.3rem, 2.4vw, 2.25rem);
+        }
         [data-testid="stMetricLabel"] p {
             color: #98A2B1;
             font-size: 12px;
@@ -194,6 +221,7 @@ def show_filters(df, key):
         event_type = st.selectbox(
             "Event type",
             ["All events"] + event_types,
+            format_func=nice,
             key=f"{key}_event",
         )
 
@@ -273,21 +301,24 @@ def show_type_chart(df, key):
         .rename(columns={"event_type": "Event", "severity": "Severity"})
     )
 
+    counts["Event"] = counts["Event"].map(nice)
+    counts["Severity"] = counts["Severity"].map(nice)
+
     fig = px.bar(
         counts,
         x="Events",
         y="Event",
         orientation="h",
         color="Severity",
-        color_discrete_map=SEVERITY_COLORS,
-        category_orders={"Severity": SEVERITY_ORDER},
+        color_discrete_map={nice(k): v for k, v in SEVERITY_COLORS.items()},
+        category_orders={"Severity": [nice(s) for s in SEVERITY_ORDER]},
         title="By event type and severity",
     )
 
     fig.update_layout(
         yaxis={"categoryorder": "total ascending", "title": "", "gridcolor": "#252C37"},
         xaxis={"title": "", "gridcolor": "#252C37"},
-        legend={"title": "", "orientation": "h", "y": 1.12, "x": 1, "xanchor": "right"},
+        legend={"title": "", "orientation": "h", "y": -0.12, "yanchor": "top", "x": 0},
     )
 
     show_chart(fig, key)
@@ -406,12 +437,8 @@ def show_records(df, columns, file_name, key):
                     width="stretch",
                 )
 
-        st.dataframe(
-            records.rename(columns=COLUMN_LABELS),
-            width="stretch",
-            height=320,
-            hide_index=True,
-        )
+        # Snapshot paths are useless on screen; exports still include them.
+        show_table(records.drop(columns="snapshot", errors="ignore"), height=320)
 
 
 # ============================================================
@@ -473,7 +500,7 @@ def show_live_now():
                     unsafe_allow_html=True,
                 )
 
-                st.caption(f"{newest['event_type']} · {pd.Timestamp(newest['timestamp']):%H:%M:%S}")
+                st.caption(f"{nice(newest['event_type'])} · {pd.Timestamp(newest['timestamp']):%H:%M:%S}")
 
             else:
 
@@ -482,7 +509,7 @@ def show_live_now():
         with info_col:
 
             st.caption(":red[●] **LIVE** · refreshes every 2 s")
-            st.metric("Last event", latest["event_type"])
+            st.metric("Last event", nice(latest["event_type"]))
             st.caption(f"{latest['driver_id']} · {format_time_since(seconds_since)}")
             st.metric("Events today", f"{today_count:,}")
 
@@ -490,12 +517,10 @@ def show_live_now():
 
         st.markdown("##### Latest events")
 
-        st.dataframe(
-            df.head(5)[["timestamp", "driver_id", "event_type", "duration_s", "severity"]]
-            .rename(columns=COLUMN_LABELS),
-            width="stretch",
-            hide_index=True,
-        )
+        latest_five = df.head(5)[["timestamp", "driver_id", "event_type", "severity"]].copy()
+        latest_five["timestamp"] = latest_five["timestamp"].dt.strftime("%H:%M:%S")
+
+        show_table(latest_five)
 
 
 def show_monitoring_tab(df):
@@ -546,7 +571,7 @@ def show_webcam_results(driver, event_type, start_date, end_date):
         metric1.metric("Total events", f"{len(filtered):,}")
         metric2.metric("High severity", f"{high_events:,}")
         metric3.metric("Average duration", f"{filtered['duration_s'].mean():.1f} s")
-        metric4.metric("Most common", most_common)
+        metric4.metric("Most common", nice(most_common))
 
     # ----------------------------------
     # CHARTS
@@ -628,9 +653,9 @@ def show_driving_tab(df):
     # SCORES TABLE + EVENT CHARTS
     # ----------------------------------
 
-    left, right = st.columns(2)
+    left, right = st.columns([3, 2])
 
-    with left.container(border=True):
+    with left.container(border=True, height="stretch"):
 
         title, note = st.columns([1, 1], vertical_alignment="bottom")
 
@@ -663,12 +688,16 @@ def show_driving_tab(df):
                     min_value=0,
                     max_value=100,
                     format="%d",
+                    width="small",
                 ),
+                "Low": st.column_config.NumberColumn(width="small"),
+                "Medium": st.column_config.NumberColumn(width="small"),
+                "High": st.column_config.NumberColumn(width="small"),
             },
         )
 
         deductions = ", ".join(
-            f"{severity} −{points}"
+            f"{nice(severity)} −{points}"
             for severity, points in SEVERITY_DEDUCTIONS.items()
         )
 
@@ -682,10 +711,11 @@ def show_driving_tab(df):
         right.info("No driving events match these filters.")
         return
 
-    with right.container(border=True):
+    # Same-height cards side by side; the daily chart gets its own row so no gap.
+    with right.container(border=True, height="stretch"):
         show_type_chart(filtered, "driving_types")
 
-    with right.container(border=True):
+    with st.container(border=True):
         show_daily_chart(filtered, "driving_daily")
 
     # ----------------------------------
@@ -706,7 +736,7 @@ def show_driving_tab(df):
 
 st.title("Fleet Safety")
 
-st.caption("Synthetic demo data")
+st.caption("Live webcam detections plus synthetic demo data")
 
 try:
 
