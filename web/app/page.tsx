@@ -27,7 +27,6 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <AutoRefresh seconds={REFRESH_S} />
       <Header title="Overview" subtitle={`Live webcam detections plus synthetic demo data · ${filters.from} to ${filters.to}`}>
         <LivePill seconds={REFRESH_S} />
-        <Export area="events" filters={filters} />
       </Header>
 
       {!latest ? (
@@ -70,7 +69,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                 <DailyChart rows={filtered} filters={filters} />
                 <TypeChart rows={filtered} />
               </section>
-              <Records area="events" rows={filtered} filters={filters} />
+              <Records area="events" rows={filtered} filters={filters}><Export area="events" filters={filters} /></Records>
             </>
           )}
 

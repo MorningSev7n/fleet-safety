@@ -19,9 +19,7 @@ export default async function Driving({ searchParams }: { searchParams: Promise<
 
   return (
     <div className="page">
-      <Header title="Driving behaviour" subtitle={`Harsh braking, cornering and speeding · synthetic demo data · ${filters.from} to ${filters.to}`}>
-        {rows.length > 0 && <Export area="driving" filters={filters} />}
-      </Header>
+      <Header title="Driving behaviour" subtitle={`Harsh braking, cornering and speeding · synthetic demo data · ${filters.from} to ${filters.to}`} />
 
       {rows.length === 0 ? <Empty>No driving events yet. Run <code>python scripts/seed_behavior.py</code>.</Empty> : (
         <>
@@ -39,7 +37,7 @@ export default async function Driving({ searchParams }: { searchParams: Promise<
           {filtered.length > 0 && (
             <>
               <DailyChart rows={filtered} filters={filters} />
-              <Records area="driving" rows={filtered} filters={filters} />
+              <Records area="driving" rows={filtered} filters={filters}><Export area="driving" filters={filters} /></Records>
             </>
           )}
         </>
