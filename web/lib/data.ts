@@ -2,6 +2,10 @@
 // Mirrors src/dashboard.py so both dashboards show the same numbers.
 import { query } from "./db";
 
+// Timestamps are saved in the detector's local time with no offset, and Vercel runs in UTC,
+// so read them (and "today") in the detector's zone. Override with DATA_TZ if the device moves.
+process.env.TZ = process.env.DATA_TZ ?? "Asia/Manila";
+
 export type Area = "events" | "driving";
 
 export type EventRow = {
