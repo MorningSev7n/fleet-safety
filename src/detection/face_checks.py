@@ -206,3 +206,49 @@ def calibrate_threshold(ear_samples):
         return None
 
     return baseline * 0.75
+
+
+# ==========================================
+# 5. PERCLOS FATIGUE MEASURE
+# ==========================================
+
+PERCLOS_WINDOW = 60.0   # seconds of history
+PERCLOS_WARMUP = 30.0   # no value until we have this much
+FATIGUE_ON = 0.15       # event starts above this
+FATIGUE_OFF = 0.12      # and ends below this (the gap stops flapping)
+
+
+def update_perclos(history, now, eyes_closed):
+    """
+    PERCLOS = share of the last 60 s with eyes closed.
+    history is a deque of (time, eyes_closed); this adds one frame,
+    drops entries older than the window and returns 0-1,
+    or None while there is less than 30 s of data ("warming up").
+    """
+
+    history.append((now, eyes_closed))
+
+    while now - history[0][0] > PERCLOS_WINDOW:
+        history.popleft()
+
+    if now - history[0][0] < PERCLOS_WARMUP:
+        return None
+
+    closed = sum(1 for _, was_closed in history if was_closed)
+
+    return closed / len(history)
+
+
+def is_fatigued(perclos, was_fatigued):
+    """True above 15 %, False below 12 %, otherwise no change."""
+
+    if perclos is None:
+        return was_fatigued
+
+    if perclos > FATIGUE_ON:
+        return True
+
+    if perclos < FATIGUE_OFF:
+        return False
+
+    return was_fatigued

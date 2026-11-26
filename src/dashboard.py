@@ -32,6 +32,7 @@ WEBCAM_EVENT_COLORS = {
     "YAWN": "#E7A947",
     "LOOK_AWAY": "#F08A4B",
     "PHONE": "#A875D8",
+    "FATIGUE": "#4F8FE0",
 }
 
 DRIVING_EVENT_COLORS = {

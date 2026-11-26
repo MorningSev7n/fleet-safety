@@ -5,6 +5,7 @@ import os
 import statistics
 import time
 
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from ultralytics import YOLO
@@ -17,11 +18,14 @@ from detection.face_checks import (
     calculate_mar,
     estimate_head_pose,
     calibrate_threshold,
+    update_perclos,
+    is_fatigued,
 )
 from detection.alarm import (
     ALARM_SOUND,
     alarm_active,
     create_alarm_sound,
+    play_chime,
     start_alarm_worker,
     stop_alarm_worker,
 )
@@ -260,6 +264,11 @@ def run_detector():
     look_away_start = None
     phone_start = None
 
+    # PERCLOS: (time, eyes_closed) for the last 60 s.
+    perclos_history = deque()
+    perclos = None
+    fatigue_start = None
+
     # YOLO frame tracking.
     frame_count = 0
     phone_detected = False
@@ -479,6 +488,12 @@ def run_detector():
 
                         eyes_closed_start = None
 
+                    perclos = update_perclos(
+                        perclos_history,
+                        current_time,
+                        eyes_closed
+                    )
+
                     # ----------------------------------
                     # YAWN DETECTION
                     # ----------------------------------
@@ -571,6 +586,30 @@ def run_detector():
                     eyes_closed_start = None
                     yawn_start = None
                     look_away_start = None
+
+                # ----------------------------------
+                # FATIGUE (PERCLOS) EVENT
+                # ----------------------------------
+
+                fatigued = is_fatigued(perclos, fatigue_start is not None)
+
+                if fatigued and fatigue_start is None:
+
+                    fatigue_start = current_time
+                    snapshots["FATIGUE"] = raw_frame
+
+                    # One soft chime per crossing, not the siren.
+                    play_chime()
+
+                elif not fatigued and fatigue_start is not None:
+
+                    saved_events.append(finish_event(
+                        "FATIGUE",
+                        fatigue_start,
+                        current_time
+                    ))
+
+                    fatigue_start = None
 
                 # ----------------------------------
                 # YOLO PHONE DETECTION
@@ -747,6 +786,8 @@ def run_detector():
                     "alarm": alarm_required,
                     "face_box": face_box,
                     "phone_box": phone_box_to_draw,
+                    "perclos": perclos,
+                    "take_break": fatigue_start is not None,
                     "toast": toast if current_time - toast_time < 3 else None,
                 }
 
@@ -773,11 +814,17 @@ def run_detector():
                     finish_event("YAWN", yawn_start, current_time)
                     finish_event("LOOK_AWAY", look_away_start, current_time)
                     finish_event("PHONE", phone_start, current_time)
+                    finish_event("FATIGUE", fatigue_start, current_time)
 
                     eyes_closed_start = None
                     yawn_start = None
                     look_away_start = None
                     phone_start = None
+                    fatigue_start = None
+
+                    # PERCLOS belongs to one driver, so start it again.
+                    perclos_history.clear()
+                    perclos = None
 
                     calibrating = True
                     calibration_start = None
@@ -814,6 +861,12 @@ def run_detector():
         finish_event(
             "PHONE",
             phone_start,
+            shutdown_time
+        )
+
+        finish_event(
+            "FATIGUE",
+            fatigue_start,
             shutdown_time
         )
 

@@ -192,6 +192,57 @@ def draw_gauges(frame, state, texts):
         draw_yaw_gauge(frame, texts, x, y + 104, state["yaw"], state["yaw_limit"])
 
 
+def draw_perclos_meter(frame, state, texts):
+    """Fatigue bar under the gauges: green < 8 %, amber 8-15 %, red > 15 %."""
+
+    if "perclos" not in state:
+        return
+
+    perclos = state["perclos"]
+    x, y = 20, BAR_HEIGHT + 16 + 3 * 52 + 14
+    bar_w, bar_h, top_share = 180, 10, 0.30
+
+    darken(frame, x - 12, y - 10, x + 192, y + 44)
+
+    if perclos is None:
+        texts.append((x, y, "Fatigue  warming up…", 16, GREY, "la"))
+        return
+
+    if perclos > 0.15:
+        color = RED
+    elif perclos >= 0.08:
+        color = AMBER
+    else:
+        color = GREEN
+
+    texts.append((x, y, f"Fatigue  {perclos * 100:.0f} %", 16, WHITE, "la"))
+
+    top = y + 24
+    cv2.rectangle(frame, (x, top), (x + bar_w, top + bar_h), (70, 70, 70), -1)
+    fill = int(bar_w * min(perclos / top_share, 1.0))
+    cv2.rectangle(frame, (x, top), (x + fill, top + bar_h), color, -1)
+
+    # Ticks where the colour changes.
+    for limit in (0.08, 0.15):
+        tick_x = x + int(bar_w * limit / top_share)
+        cv2.line(frame, (tick_x, top - 4), (tick_x, top + bar_h + 4), WHITE, 2)
+
+
+def draw_break_banner(frame, state, texts):
+    """Red "TAKE A BREAK" card under the top bar while fatigued."""
+
+    if not state.get("take_break"):
+        return
+
+    width = frame.shape[1]
+    card_w = 320
+    x1, y1 = (width - card_w) // 2, BAR_HEIGHT + 12
+    x2, y2 = x1 + card_w, y1 + 52
+
+    cv2.rectangle(frame, (x1, y1), (x2, y2), RED, -1)
+    texts.append((width // 2, y1 + 26, "TAKE A BREAK", 28, WHITE, "mm"))
+
+
 def draw_rings(frame, state, texts):
     """A countdown ring for each running timer, bottom center."""
 
@@ -307,7 +358,8 @@ def draw_hud(frame, state):
     state keys: status, driver_id, timers {name: (elapsed, limit)},
     ear/ear_limit, mar/mar_limit, yaw/yaw_limit (None when no face),
     alarm (bool), face_box, phone_box, toast (event_type, duration, severity),
-    limit_note (text under the top bar), calibration (progress 0-1, message).
+    limit_note (text under the top bar), calibration (progress 0-1, message),
+    perclos (0-1, None = warming up, key missing = no meter), take_break (bool).
     """
 
     texts = []
@@ -320,6 +372,8 @@ def draw_hud(frame, state):
 
     draw_top_bar(frame, state, texts)
     draw_gauges(frame, state, texts)
+    draw_perclos_meter(frame, state, texts)
+    draw_break_banner(frame, state, texts)
     draw_rings(frame, state, texts)
     draw_calibration(frame, state, texts)
     draw_toast(frame, state, texts)

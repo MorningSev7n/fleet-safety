@@ -30,6 +30,12 @@ SEVERITY_RULES = {
         "high": 3.0,
         "maximum": 8.0,
     },
+    "FATIGUE": {
+        "minimum": 5.0,
+        "medium": 30.0,
+        "high": 60.0,
+        "maximum": 120.0,
+    },
 }
 
 

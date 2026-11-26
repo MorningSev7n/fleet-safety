@@ -149,3 +149,19 @@ def stop_alarm_worker(thread):
     if thread is not None:
         thread.join(timeout=2.0)
 
+
+
+def play_chime():
+    """One soft chime (not the siren), without waiting for it to finish."""
+
+    try:
+
+        subprocess.Popen(
+            ["afplay", "/System/Library/Sounds/Glass.aiff"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+    except Exception as error:
+
+        print(f"Could not play chime: {error}")

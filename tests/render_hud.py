@@ -37,6 +37,17 @@ STATES = {
     "calibrated": {**FACE, "status": "ATTENTIVE", "ear": 0.29, "mar": 0.30,
                    "yaw": 4.0, "timers": {}, "alarm": False, "ear_limit": 0.24,
                    "limit_note": "Baseline 0.32 → limit 0.24"},
+    "perclos_warming": {**FACE, "status": "ATTENTIVE", "ear": 0.29, "mar": 0.30,
+                        "yaw": 4.0, "timers": {}, "alarm": False, "perclos": None},
+    "perclos_ok": {**FACE, "status": "ATTENTIVE", "ear": 0.29, "mar": 0.30,
+                   "yaw": 4.0, "timers": {}, "alarm": False, "perclos": 0.05},
+    "perclos_amber": {**FACE, "status": "DROWSY", "ear": 0.15, "mar": 0.30,
+                      "yaw": 2.0, "timers": {"Eyes closed": (0.6, 1.5)},
+                      "alarm": False, "perclos": 0.11},
+    "perclos_break": {**FACE, "status": "ATTENTIVE", "ear": 0.28, "mar": 0.30,
+                      "yaw": 1.0, "timers": {}, "alarm": False, "perclos": 0.19,
+                      "take_break": True, "limit_note": "Baseline 0.32 → limit 0.24",
+                      "toast": ("FATIGUE", 42.0, "MEDIUM")},
 }
 
 for name, state in STATES.items():
