@@ -1,7 +1,5 @@
 # Fleet Safety – Driver Fatigue & Distraction Detection
 
-GECO Build Week, Solution 25 (Fleet Safety).
-
 A laptop webcam watches the driver. If they close their eyes, yawn, look away or pick up a phone, the app sounds an alarm and speaks a warning. Each event is saved with a photo and appears on a live dashboard, which you can also open on a phone.
 
 **Who it's for:** an SME fleet owner who can't ride along with every driver. The dashboard shows who is tired or distracted, when it happens and how serious it is, so the owner knows which drivers need coaching.
