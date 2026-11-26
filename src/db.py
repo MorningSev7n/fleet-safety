@@ -28,6 +28,13 @@ def create_table():
             )
         """)
 
+        # Older databases were made before snapshots existed.
+        # Add the column without touching the saved rows.
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(events)")]
+
+        if "snapshot" not in columns:
+            conn.execute("ALTER TABLE events ADD COLUMN snapshot TEXT")
+
         # Separate driving behaviour events table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS driving_events (
@@ -43,8 +50,11 @@ def create_table():
         """)
 
 
-def save_event(driver_id, vehicle_id, event_type, duration_s, severity, timestamp=None):
-    """Save a webcam event. Uses the current time unless a timestamp is given."""
+def save_event(driver_id, vehicle_id, event_type, duration_s, severity, timestamp=None, snapshot=None):
+    """
+    Save a webcam event. Uses the current time unless a timestamp is given.
+    snapshot is the picture path (relative to the project folder), or None.
+    """
 
     if timestamp is None:
         timestamp = datetime.now().isoformat(timespec="seconds")
@@ -57,16 +67,18 @@ def save_event(driver_id, vehicle_id, event_type, duration_s, severity, timestam
                 vehicle_id,
                 event_type,
                 duration_s,
-                severity
+                severity,
+                snapshot
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             timestamp,
             driver_id,
             vehicle_id,
             event_type,
             duration_s,
-            severity
+            severity,
+            snapshot
         ))
 
 

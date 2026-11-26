@@ -4,3 +4,5 @@ __pycache__/
 *.pt
 .DS_Store
 .env
+data/snapshots/
+

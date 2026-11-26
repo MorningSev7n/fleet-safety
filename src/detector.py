@@ -5,6 +5,7 @@ import os
 import statistics
 import time
 
+from datetime import datetime
 from pathlib import Path
 from ultralytics import YOLO
 
@@ -65,14 +66,58 @@ PHONE_CONFIDENCE = 0.35
 # Display
 WINDOW_NAME = "Fleet Safety - Driver Monitoring"
 
+# Event snapshots (small JPEGs shown on the dashboard)
+SNAPSHOT_FOLDER = ROOT / "data" / "snapshots"
+SNAPSHOT_WIDTH = 480
+
+# Raw camera frame kept per event type, from when its alert fired.
+# finish_event takes it out again, so each picture belongs to one event.
+snapshots = {}
+
 
 # ==========================================
 # 2. EVENT LOGGING
 # ==========================================
 
-def log_event(event_type, duration):
+def save_snapshot(frame, timestamp, event_type):
+    """
+    Save a small JPEG of the frame.
+    Returns its path relative to the project folder, or None.
+    """
+
+    if frame is None:
+        return None
+
+    try:
+
+        SNAPSHOT_FOLDER.mkdir(parents=True, exist_ok=True)
+
+        # Colons are not allowed in Windows file names.
+        file_name = f"{timestamp.replace(':', '-')}_{event_type}.jpg"
+        path = SNAPSHOT_FOLDER / file_name
+
+        height, width = frame.shape[:2]
+        small = cv2.resize(
+            frame,
+            (SNAPSHOT_WIDTH, int(height * SNAPSHOT_WIDTH / width))
+        )
+
+        if not cv2.imwrite(str(path), small):
+            raise OSError("cv2.imwrite failed")
+
+        return str(path.relative_to(ROOT))
+
+    except Exception as error:
+
+        # The event is still saved, just without a picture.
+        print(f"Could not save snapshot for {event_type}: {error}")
+        return None
+
+
+def log_event(event_type, duration, frame=None):
     """
     Classify and save an event using its full duration.
+    frame is the raw camera picture from when the alert fired (or None).
     """
 
     severity = classify_severity(
@@ -91,12 +136,17 @@ def log_event(event_type, duration):
 
     try:
 
+        # Same time for the database row and the picture's file name.
+        timestamp = datetime.now().isoformat(timespec="seconds")
+
         save_event(
             DRIVER_ID,
             VEHICLE_ID,
             event_type,
             round(duration, 2),
-            severity
+            severity,
+            timestamp=timestamp,
+            snapshot=save_snapshot(frame, timestamp, event_type)
         )
 
         print(
@@ -125,13 +175,16 @@ def finish_event(event_type, start_time, end_time):
     Returns (event_type, duration, severity) if saved, else None.
     """
 
+    # The event is over, so its picture is used now or never.
+    frame = snapshots.pop(event_type, None)
+
     if start_time is None:
         return None
 
     duration = end_time - start_time
 
     if classify_severity(event_type, duration) != "UNKNOWN":
-        return log_event(event_type, duration)
+        return log_event(event_type, duration, frame)
 
     return None
 
@@ -244,6 +297,9 @@ def run_detector():
                     break
 
                 frame = cv2.flip(frame, 1)
+
+                # Clean copy for snapshots (eye dots and HUD are drawn on frame).
+                raw_frame = frame.copy()
 
                 height, width, _ = frame.shape
                 current_time = time.monotonic()
@@ -410,6 +466,8 @@ def run_detector():
                         if closed_duration >= EYES_CLOSED_SECONDS:
 
                             eyes_alert_active = True
+                            # setdefault keeps the frame from the first alert frame.
+                            snapshots.setdefault("EYES_CLOSED", raw_frame)
 
                     else:
 
@@ -437,6 +495,7 @@ def run_detector():
 
                         if yawn_start is None:
                             yawn_start = current_time
+                            snapshots["YAWN"] = raw_frame
 
                     else:
 
@@ -475,6 +534,7 @@ def run_detector():
                         if look_away_duration >= LOOK_AWAY_SECONDS:
 
                             look_away_alert_active = True
+                            snapshots.setdefault("LOOK_AWAY", raw_frame)
 
                     else:
 
@@ -604,6 +664,7 @@ def run_detector():
                     if phone_duration >= PHONE_SECONDS:
 
                         phone_alert_active = True
+                        snapshots.setdefault("PHONE", raw_frame)
 
                 else:
 

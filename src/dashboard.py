@@ -1,12 +1,15 @@
 
+import base64
 import io
 import xml.etree.ElementTree as ET
+
+from datetime import date
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from db import get_events, get_driving_events
+from db import ROOT, get_events, get_driving_events
 from scoring import calculate_driver_scores, SEVERITY_DEDUCTIONS
 
 
@@ -59,6 +62,7 @@ WEBCAM_COLUMNS = [
     "event_type",
     "duration_s",
     "severity",
+    "snapshot",
 ]
 
 DRIVING_COLUMNS = [
@@ -85,6 +89,7 @@ COLUMN_LABELS = {
     "threshold_value": "Limit",
     "unit": "Unit",
     "severity": "Severity",
+    "snapshot": "Snapshot",
 }
 
 CHART_LAYOUT = {
@@ -131,7 +136,7 @@ st.markdown(
 # 3. LOAD DATA
 # ============================================================
 
-@st.cache_data(ttl=5)
+# No cache: the live sections reload this every 2 seconds.
 def load_webcam_events():
     """Load webcam events and fix column types."""
 
@@ -184,7 +189,7 @@ def show_filters(df, key):
     """
     Show driver, event type, and date filters.
 
-    Returns the filtered data, the selected driver,
+    Returns the selected driver, event type,
     and the selected start and end dates.
     """
 
@@ -192,7 +197,9 @@ def show_filters(df, key):
     event_types = sorted(df["event_type"].unique().tolist())
 
     min_date = df["timestamp"].min().date()
-    max_date = df["timestamp"].max().date()
+
+    # Reach today, so new live events fit in the default range.
+    max_date = max(df["timestamp"].max().date(), date.today())
 
     col1, col2, col3 = st.columns([1, 1, 2])
 
@@ -234,6 +241,12 @@ def show_filters(df, key):
         start_date = dates[0]
         end_date = dates[0]
 
+    return driver, event_type, start_date, end_date
+
+
+def apply_filters(df, driver, event_type, start_date, end_date):
+    """Keep only the rows that match the selected filters."""
+
     event_dates = df["timestamp"].dt.date
 
     filtered = df[
@@ -253,7 +266,7 @@ def show_filters(df, key):
             filtered["event_type"] == event_type
         ]
 
-    return filtered, driver, start_date, end_date
+    return filtered
 
 
 # ============================================================
@@ -452,14 +465,107 @@ def show_records(df, columns, file_name, key):
 # 7. TAB: DRIVER MONITORING (WEBCAM)
 # ============================================================
 
+def format_time_since(seconds):
+    """Turn seconds into short text like '45 s ago' or '3 h 12 min ago'."""
+
+    seconds = max(int(seconds), 0)
+
+    if seconds < 60:
+        return f"{seconds} s ago"
+
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+
+    return f"{seconds // 3600} h {seconds % 3600 // 60} min ago"
+
+
+@st.fragment(run_every=2)
+def show_live_now():
+    """Newest webcam events, refreshed every 2 seconds."""
+
+    st.markdown("#### 🔴 Live now")
+
+    df = load_webcam_events()
+
+    if df.empty:
+
+        st.caption("Waiting for the first event from the detector…")
+        return
+
+    df = df.sort_values("timestamp", ascending=False)
+    latest = df.iloc[0]
+
+    today_count = (df["timestamp"].dt.date == date.today()).sum()
+    seconds_since = (pd.Timestamp.now() - latest["timestamp"]).total_seconds()
+
+    left, right = st.columns([2, 1])
+
+    with left:
+
+        metric1, metric2 = st.columns(2)
+
+        metric1.metric("Events today", f"{today_count:,}")
+        metric2.metric("Last event", format_time_since(seconds_since), latest["event_type"], delta_color="off")
+
+        st.dataframe(
+            df.head(5)[["timestamp", "driver_id", "event_type", "duration_s", "severity"]]
+            .rename(columns=COLUMN_LABELS),
+            width="stretch",
+            hide_index=True,
+        )
+
+    with right:
+
+        # Seeded events have no picture, so look for the newest one that has.
+        with_pictures = df[df["snapshot"].notna()]
+
+        if not with_pictures.empty:
+
+            newest = with_pictures.iloc[0]
+            picture = ROOT / newest["snapshot"]
+
+            if picture.exists():
+
+                # Inline picture instead of st.image: st.image's /media link
+                # returns an error with this Streamlit + Starlette pair.
+                encoded = base64.b64encode(picture.read_bytes()).decode()
+
+                st.markdown(
+                    f'<img src="data:image/jpeg;base64,{encoded}" '
+                    'style="width: 100%; border-radius: 12px;">',
+                    unsafe_allow_html=True,
+                )
+
+                st.caption(f"{newest['event_type']} · {newest['timestamp']:%H:%M:%S}")
+
+
 def show_monitoring_tab(df):
+
+    show_live_now()
 
     if df.empty:
 
         st.info("No webcam events yet. Run `python scripts/seed.py` or start the detector.")
         return
 
-    filtered, _, _, _ = show_filters(df, "webcam")
+    # The filters stay outside the fragment, so they never reset.
+    # Changing one reruns the page, which passes the new values in.
+    driver, event_type, start_date, end_date = show_filters(df, "webcam")
+
+    show_webcam_results(driver, event_type, start_date, end_date)
+
+
+@st.fragment(run_every=2)
+def show_webcam_results(driver, event_type, start_date, end_date):
+    """KPIs, charts and records, reloaded every 2 seconds."""
+
+    filtered = apply_filters(
+        load_webcam_events(),
+        driver,
+        event_type,
+        start_date,
+        end_date,
+    )
 
     if filtered.empty:
 
@@ -546,7 +652,9 @@ def show_driving_tab(df):
         st.info("No driving events yet. Run `python scripts/seed_behavior.py`.")
         return
 
-    filtered, driver, start_date, end_date = show_filters(df, "driving")
+    driver, event_type, start_date, end_date = show_filters(df, "driving")
+
+    filtered = apply_filters(df, driver, event_type, start_date, end_date)
 
     # ----------------------------------
     # DRIVER SCORES
