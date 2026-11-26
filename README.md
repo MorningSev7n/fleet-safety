@@ -6,7 +6,7 @@ A laptop webcam watches the driver. If they close their eyes, yawn, look away or
 
 All data is synthetic, and every tool used is free and open source.
 
-**Live dashboard:** https://fleet-safety-d5x6sfeomjkaajymggizkd.streamlit.app (if it says the app is asleep, click the wake-up button and wait about 30 seconds)
+**Live dashboard:** https://fleet-safety-lxq8ohkanuem5juopscqut.streamlit.app (if it says the app is asleep, click the wake-up button and wait about 30 seconds)
 
 ---
 
