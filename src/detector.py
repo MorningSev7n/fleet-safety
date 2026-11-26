@@ -2,6 +2,7 @@
 import cv2
 import mediapipe as mp
 import os
+import statistics
 import time
 
 from pathlib import Path
@@ -14,6 +15,7 @@ from detection.face_checks import (
     eye_aspect_ratio,
     calculate_mar,
     estimate_head_pose,
+    calibrate_threshold,
 )
 from detection.alarm import (
     ALARM_SOUND,
@@ -36,7 +38,8 @@ DRIVER_ID = "DRIVER_001"
 VEHICLE_ID = "VEHICLE_001"
 
 # Eye detection
-EAR_THRESHOLD = 0.20
+EAR_THRESHOLD = 0.20  # default, used only if calibration fails
+CALIBRATION_SECONDS = 5.0
 EYES_CLOSED_SECONDS = 1.5
 
 LEFT_EYE = [362, 385, 387, 263, 373, 380]
@@ -158,7 +161,7 @@ def draw_eye_points(frame, points):
 def run_detector():
 
     print("Starting Fleet Safety Driver Monitoring...")
-    print("Press Q to quit.")
+    print("Press Q to quit, C to calibrate again.")
 
     # Generate the emergency siren.
     try:
@@ -212,6 +215,15 @@ def run_detector():
     # Last saved event, shown as a toast for a few seconds.
     toast = None
     toast_time = 0.0
+
+    # Eye calibration runs first; C starts it again.
+    # calibration_start = None means "start a fresh calibration now".
+    calibrating = True
+    calibration_start = None
+    calibration_tries = 1
+    ear_samples = []
+    ear_limit = EAR_THRESHOLD
+    limit_note = None
 
     try:
 
@@ -308,7 +320,83 @@ def run_detector():
                     draw_eye_points(frame, left_points)
                     draw_eye_points(frame, right_points)
 
-                    eyes_closed = average_ear < EAR_THRESHOLD
+                # ----------------------------------
+                # CALIBRATION (no detection, no events, no alarm)
+                # ----------------------------------
+
+                if calibrating:
+
+                    alarm_active.clear()
+
+                    if calibration_start is None:
+                        calibration_start = current_time
+                        calibration_tries = 1
+                        ear_samples = []
+
+                    if face_detected:
+                        ear_samples.append(average_ear)
+
+                    progress = min(
+                        (current_time - calibration_start) / CALIBRATION_SECONDS,
+                        1.0
+                    )
+
+                    if progress >= 1.0:
+
+                        new_limit = calibrate_threshold(ear_samples)
+
+                        if new_limit is not None:
+
+                            ear_limit = new_limit
+                            limit_note = (
+                                f"Baseline {statistics.median(ear_samples):.2f}"
+                                f" → limit {new_limit:.2f}"
+                            )
+                            calibrating = False
+
+                        elif calibration_tries == 1:
+
+                            # One more try before giving up.
+                            calibration_tries = 2
+                            calibration_start = current_time
+                            ear_samples = []
+
+                        else:
+
+                            ear_limit = EAR_THRESHOLD
+                            limit_note = "Using default limit"
+                            calibrating = False
+
+                        if not calibrating:
+                            print(f"Calibration: {limit_note}")
+
+                    if calibration_tries == 1:
+                        message = "Look at the camera normally – calibrating"
+                    else:
+                        message = "Calibration unclear, look at the camera"
+
+                    draw_hud(frame, {
+                        "status": "CALIBRATING",
+                        "driver_id": DRIVER_ID,
+                        "face_box": face_box,
+                        "calibration": (progress, message),
+                    })
+
+                    cv2.imshow(WINDOW_NAME, frame)
+
+                    key = cv2.waitKey(1) & 0xFF
+
+                    if key == ord("q"):
+                        break
+
+                    if key == ord("c"):
+                        calibration_start = None
+
+                    continue
+
+                if face_detected:
+
+                    eyes_closed = average_ear < ear_limit
 
                     if eyes_closed:
 
@@ -589,7 +677,8 @@ def run_detector():
                     "driver_id": DRIVER_ID,
                     "timers": timers,
                     "ear": average_ear,
-                    "ear_limit": EAR_THRESHOLD,
+                    "ear_limit": ear_limit,
+                    "limit_note": limit_note,
                     "mar": mar,
                     "mar_limit": MAR_THRESHOLD,
                     "yaw": yaw,
@@ -611,8 +700,26 @@ def run_detector():
                     frame
                 )
 
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                key = cv2.waitKey(1) & 0xFF
+
+                if key == ord("q"):
                     break
+
+                if key == ord("c"):
+
+                    # New driver: save what is still open, then calibrate.
+                    finish_event("EYES_CLOSED", eyes_closed_start, current_time)
+                    finish_event("YAWN", yawn_start, current_time)
+                    finish_event("LOOK_AWAY", look_away_start, current_time)
+                    finish_event("PHONE", phone_start, current_time)
+
+                    eyes_closed_start = None
+                    yawn_start = None
+                    look_away_start = None
+                    phone_start = None
+
+                    calibrating = True
+                    calibration_start = None
 
     except KeyboardInterrupt:
 

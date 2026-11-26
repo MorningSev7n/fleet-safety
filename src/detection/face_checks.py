@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 import math
+import statistics
 
 
 MOUTH_VERTICAL = [13, 14, 82, 87, 312, 317]
@@ -182,3 +183,26 @@ def estimate_head_pose(face_landmarks, width, height):
 
     return math.degrees(yaw), math.degrees(pitch)
 
+
+
+# ==========================================
+# 4. PER-DRIVER EYE CALIBRATION
+# ==========================================
+
+def calibrate_threshold(ear_samples):
+    """
+    Turn a few seconds of open-eye EAR readings into this driver's limit.
+    Median ignores blinks; 75% of it still counts half-closed eyes as closed.
+    Returns None when the samples can't be trusted.
+    """
+
+    if len(ear_samples) < 30:
+        return None
+
+    baseline = statistics.median(ear_samples)
+
+    # Below 0.15 the driver was squinting or not looking at the camera.
+    if baseline < 0.15:
+        return None
+
+    return baseline * 0.75

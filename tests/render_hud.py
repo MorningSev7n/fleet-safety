@@ -31,6 +31,12 @@ STATES = {
     "no_face": {"status": "NO FACE", "driver_id": "DRIVER_001", "ear": None,
                 "mar": None, "yaw": None, "timers": {}, "alarm": False,
                 "toast": ("EYES_CLOSED", 1.8, "MEDIUM")},
+    "calibrating": {"status": "CALIBRATING", "driver_id": "DRIVER_001",
+                    "face_box": (520, 180, 760, 480),
+                    "calibration": (0.6, "Look at the camera normally – calibrating")},
+    "calibrated": {**FACE, "status": "ATTENTIVE", "ear": 0.29, "mar": 0.30,
+                   "yaw": 4.0, "timers": {}, "alarm": False, "ear_limit": 0.24,
+                   "limit_note": "Baseline 0.32 → limit 0.24"},
 }
 
 for name, state in STATES.items():

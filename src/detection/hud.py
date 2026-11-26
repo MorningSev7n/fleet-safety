@@ -30,6 +30,7 @@ STATUS_COLORS = {
     "DROWSY": AMBER,
     "ALERT": RED,
     "NO FACE": GREY,
+    "CALIBRATING": CYAN,
 }
 
 SEVERITY_COLORS = {
@@ -126,6 +127,14 @@ def draw_top_bar(frame, state, texts):
     texts.append((width - 20 - text_width(right_text, 22),
                   BAR_HEIGHT // 2 - 12, right_text, 22, WHITE, "la"))
 
+    # e.g. "Baseline 0.27 → limit 0.20", small under the bar on the right.
+    note = state.get("limit_note")
+
+    if note:
+        note_x = width - 20 - text_width(note, 16)
+        darken(frame, note_x - 10, BAR_HEIGHT, width, BAR_HEIGHT + 32)
+        texts.append((note_x, BAR_HEIGHT + 6, note, 16, WHITE, "la"))
+
 
 def draw_gauge(frame, texts, x, y, label, value, low, high, limit, bad_below):
     """One horizontal bar with the limit marked as a white tick."""
@@ -221,6 +230,30 @@ def draw_alarm_border(frame):
     cv2.rectangle(frame, (0, 0), (width - 1, height - 1), color, thickness)
 
 
+def draw_calibration(frame, state, texts):
+    """Message card with a progress bar while the driver's eyes are measured."""
+
+    calibration = state.get("calibration")
+
+    if calibration is None:
+        return
+
+    progress, message = calibration
+
+    height, width = frame.shape[:2]
+    card_w, bar_w = 520, 440
+    x1, y1 = (width - card_w) // 2, height - 170
+    x2, y2 = x1 + card_w, y1 + 100
+
+    darken(frame, x1, y1, x2, y2, keep=0.2)
+    texts.append((width // 2, y1 + 32, message, 22, WHITE, "mm"))
+
+    bar_x, bar_y = (width - bar_w) // 2, y1 + 64
+    cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + 12), (70, 70, 70), -1)
+    cv2.rectangle(frame, (bar_x, bar_y),
+                  (bar_x + int(bar_w * progress), bar_y + 12), CYAN, -1)
+
+
 def draw_toast(frame, state, texts):
     """Card in the bottom-right after an event was saved."""
 
@@ -273,7 +306,8 @@ def draw_hud(frame, state):
 
     state keys: status, driver_id, timers {name: (elapsed, limit)},
     ear/ear_limit, mar/mar_limit, yaw/yaw_limit (None when no face),
-    alarm (bool), face_box, phone_box, toast (event_type, duration, severity).
+    alarm (bool), face_box, phone_box, toast (event_type, duration, severity),
+    limit_note (text under the top bar), calibration (progress 0-1, message).
     """
 
     texts = []
@@ -287,6 +321,7 @@ def draw_hud(frame, state):
     draw_top_bar(frame, state, texts)
     draw_gauges(frame, state, texts)
     draw_rings(frame, state, texts)
+    draw_calibration(frame, state, texts)
     draw_toast(frame, state, texts)
 
     if state.get("alarm"):
