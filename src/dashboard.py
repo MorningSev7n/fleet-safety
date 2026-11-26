@@ -22,30 +22,9 @@ ATTENTION_SCORE = 75
 SEVERITY_ORDER = ["LOW", "MEDIUM", "HIGH"]
 
 SEVERITY_COLORS = {
-    "LOW": "#42B883",
+    "LOW": "#7FB3E8",
     "MEDIUM": "#E7A947",
     "HIGH": "#E35D5B",
-}
-
-WEBCAM_EVENT_COLORS = {
-    "EYES_CLOSED": "#E35D5B",
-    "YAWN": "#E7A947",
-    "LOOK_AWAY": "#F08A4B",
-    "PHONE": "#A875D8",
-    "FATIGUE": "#4F8FE0",
-}
-
-DRIVING_EVENT_COLORS = {
-    "HARSH_BRAKING": "#E7A947",
-    "HARSH_CORNERING": "#4DA3FF",
-    "SPEEDING": "#E35D5B",
-}
-
-SCORE_COLORS = {
-    "Excellent": "#42B883",
-    "Good": "#4DA3FF",
-    "Needs Improvement": "#E7A947",
-    "Poor": "#E35D5B",
 }
 
 # measured_value means something different for each driving event.
@@ -95,12 +74,14 @@ COLUMN_LABELS = {
 
 CHART_LAYOUT = {
     "template": "plotly_dark",
-    "paper_bgcolor": "#1A202A",
-    "plot_bgcolor": "#1A202A",
-    "font": {"color": "#E5EAF0"},
+    "paper_bgcolor": "rgba(0,0,0,0)",
+    "plot_bgcolor": "rgba(0,0,0,0)",
+    "font": {"color": "#E6EAF0", "family": "Inter, system-ui, sans-serif"},
     "title": {"font": {"size": 15}},
     "margin": {"l": 10, "r": 10, "t": 45, "b": 10},
-    "height": 320,
+    "height": 300,
+    "xaxis": {"gridcolor": "#252C37"},
+    "yaxis": {"gridcolor": "#252C37"},
 }
 
 
@@ -117,15 +98,11 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        [data-testid="stMetric"] {
-            background-color: #1A202A;
-            border: 1px solid #2B3441;
-            padding: 16px;
-            border-radius: 12px;
-        }
-
-        [data-testid="stMetricLabel"] {
-            color: #A6B0BE;
+        [data-testid="stMetricLabel"] p {
+            color: #98A2B1;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
         }
     </style>
     """,
@@ -286,14 +263,14 @@ def show_chart(fig, key):
     )
 
 
-def show_type_chart(df, colors, key):
-    """Horizontal bar chart of events per event type."""
+def show_type_chart(df, key):
+    """Horizontal bars per event type, split by severity (LOW → HIGH)."""
 
     counts = (
-        df["event_type"]
-        .value_counts()
-        .rename_axis("Event")
+        df.groupby(["event_type", "severity"])
+        .size()
         .reset_index(name="Events")
+        .rename(columns={"event_type": "Event", "severity": "Severity"})
     )
 
     fig = px.bar(
@@ -301,44 +278,16 @@ def show_type_chart(df, colors, key):
         x="Events",
         y="Event",
         orientation="h",
-        color="Event",
-        color_discrete_map=colors,
-        text="Events",
-        title="Events by type",
-    )
-
-    fig.update_layout(
-        showlegend=False,
-        yaxis={"categoryorder": "total ascending", "title": ""},
-    )
-
-    show_chart(fig, key)
-
-
-def show_severity_chart(df, key):
-    """Bar chart of events per severity, always LOW → HIGH."""
-
-    counts = (
-        df["severity"]
-        .value_counts()
-        .reindex(SEVERITY_ORDER, fill_value=0)
-        .rename_axis("Severity")
-        .reset_index(name="Events")
-    )
-
-    fig = px.bar(
-        counts,
-        x="Severity",
-        y="Events",
         color="Severity",
         color_discrete_map=SEVERITY_COLORS,
-        text="Events",
-        title="Events by severity",
+        category_orders={"Severity": SEVERITY_ORDER},
+        title="By event type and severity",
     )
 
     fig.update_layout(
-        showlegend=False,
-        xaxis={"title": ""},
+        yaxis={"categoryorder": "total ascending", "title": "", "gridcolor": "#252C37"},
+        xaxis={"title": "", "gridcolor": "#252C37"},
+        legend={"title": "", "orientation": "h", "y": 1.12, "x": 1, "xanchor": "right"},
     )
 
     show_chart(fig, key)
@@ -363,11 +312,12 @@ def show_daily_chart(df, key):
     )
 
     fig.update_traces(
-        marker_color="#4DA3FF"
+        marker_color="#5B8DEF"
     )
 
     fig.update_layout(
-        xaxis={"title": ""},
+        xaxis={"title": "", "gridcolor": "#252C37"},
+        yaxis={"title": "", "gridcolor": "#252C37"},
     )
 
     show_chart(fig, key)
@@ -429,37 +379,39 @@ def show_records(df, columns, file_name, key):
 
     records = df[columns]
 
-    st.markdown("#### 📋 Records")
+    with st.container(border=True):
 
-    with st.expander(f"View {len(records):,} filtered records"):
+        title, export = st.columns([4, 1], vertical_alignment="center")
+
+        title.markdown("##### Records")
+        title.caption(f"{len(records):,} events match your filters")
+
+        exports = [
+            ("CSV", records.to_csv(index=False), "csv", "text/csv"),
+            ("TSV", records.to_csv(index=False, sep="\t"), "tsv", "text/tab-separated-values"),
+            ("Excel (XLSX)", to_xlsx(records), "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            ("XML", to_xml(records), "xml", "application/xml"),
+        ]
+
+        with export.popover("Export", width="stretch"):
+
+            for label, data, extension, mime in exports:
+
+                st.download_button(
+                    label,
+                    data=data,
+                    file_name=f"{file_name}.{extension}",
+                    mime=mime,
+                    key=f"{key}_{extension}",
+                    width="stretch",
+                )
 
         st.dataframe(
             records.rename(columns=COLUMN_LABELS),
             width="stretch",
+            height=320,
             hide_index=True,
         )
-
-    st.caption("Exports include only the records that match your filters.")
-
-    exports = [
-        ("📄 CSV", records.to_csv(index=False), "csv", "text/csv"),
-        ("📑 TSV", records.to_csv(index=False, sep="\t"), "tsv", "text/tab-separated-values"),
-        ("📊 XLSX", to_xlsx(records), "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-        ("🗂️ XML", to_xml(records), "xml", "application/xml"),
-    ]
-
-    for column, (label, data, extension, mime) in zip(st.columns(4), exports):
-
-        with column:
-
-            st.download_button(
-                label,
-                data=data,
-                file_name=f"{file_name}.{extension}",
-                mime=mime,
-                key=f"{key}_{extension}",
-                width="stretch",
-            )
 
 
 # ============================================================
@@ -484,13 +436,11 @@ def format_time_since(seconds):
 def show_live_now():
     """Newest webcam events, refreshed every 2 seconds."""
 
-    st.markdown("#### 🔴 Live now")
-
     df = load_webcam_events()
 
     if df.empty:
 
-        st.caption("Waiting for the first event from the detector…")
+        st.caption("Live · waiting for the first event from the detector…")
         return
 
     df = df.sort_values("timestamp", ascending=False)
@@ -499,33 +449,19 @@ def show_live_now():
     today_count = (df["timestamp"].dt.date == date.today()).sum()
     seconds_since = (pd.Timestamp.now() - latest["timestamp"]).total_seconds()
 
-    left, right = st.columns([2, 1])
+    left, right = st.columns(2)
 
-    with left:
+    with left.container(border=True, height="stretch"):
 
-        metric1, metric2 = st.columns(2)
+        picture_col, info_col = st.columns([3, 2])
 
-        metric1.metric("Events today", f"{today_count:,}")
-        metric2.metric("Last event", format_time_since(seconds_since), latest["event_type"], delta_color="off")
+        with picture_col:
 
-        st.dataframe(
-            df.head(5)[["timestamp", "driver_id", "event_type", "duration_s", "severity"]]
-            .rename(columns=COLUMN_LABELS),
-            width="stretch",
-            hide_index=True,
-        )
+            # Seeded events have no picture, so look for the newest one that has.
+            with_pictures = df[df["snapshot"].notna()]
+            picture = ROOT / with_pictures.iloc[0]["snapshot"] if not with_pictures.empty else None
 
-    with right:
-
-        # Seeded events have no picture, so look for the newest one that has.
-        with_pictures = df[df["snapshot"].notna()]
-
-        if not with_pictures.empty:
-
-            newest = with_pictures.iloc[0]
-            picture = ROOT / newest["snapshot"]
-
-            if picture.exists():
+            if picture is not None and picture.exists():
 
                 # Inline picture instead of st.image: st.image's /media link
                 # returns an error with this Streamlit + Starlette pair.
@@ -533,11 +469,34 @@ def show_live_now():
 
                 st.markdown(
                     f'<img src="data:image/jpeg;base64,{encoded}" '
-                    'style="width: 100%; border-radius: 12px;">',
+                    'alt="Latest event snapshot" style="width: 100%; border-radius: 8px;">',
                     unsafe_allow_html=True,
                 )
 
+                newest = with_pictures.iloc[0]
                 st.caption(f"{newest['event_type']} · {newest['timestamp']:%H:%M:%S}")
+
+            else:
+
+                st.caption("No snapshot yet")
+
+        with info_col:
+
+            st.caption(":red[●] **LIVE** · refreshes every 2 s")
+            st.metric("Last event", latest["event_type"])
+            st.caption(f"{latest['driver_id']} · {format_time_since(seconds_since)}")
+            st.metric("Events today", f"{today_count:,}")
+
+    with right.container(border=True, height="stretch"):
+
+        st.markdown("##### Latest events")
+
+        st.dataframe(
+            df.head(5)[["timestamp", "driver_id", "event_type", "duration_s", "severity"]]
+            .rename(columns=COLUMN_LABELS),
+            width="stretch",
+            hide_index=True,
+        )
 
 
 def show_monitoring_tab(df):
@@ -581,54 +540,26 @@ def show_webcam_results(driver, event_type, start_date, end_date):
 
     most_common = filtered["event_type"].value_counts().idxmax()
 
-    metric1, metric2, metric3, metric4 = st.columns(4)
+    with st.container(border=True):
 
-    metric1.metric("Total events", f"{len(filtered):,}")
-    metric2.metric("High severity", f"{high_events:,}")
-    metric3.metric("Average duration", f"{filtered['duration_s'].mean():.1f} s")
-    metric4.metric("Most common", most_common)
+        metric1, metric2, metric3, metric4 = st.columns(4)
+
+        metric1.metric("Total events", f"{len(filtered):,}")
+        metric2.metric("High severity", f"{high_events:,}")
+        metric3.metric("Average duration", f"{filtered['duration_s'].mean():.1f} s")
+        metric4.metric("Most common", most_common)
 
     # ----------------------------------
-    # CHARTS (2 × 2)
+    # CHARTS
     # ----------------------------------
 
     left, right = st.columns(2)
 
-    with left:
-        show_type_chart(filtered, WEBCAM_EVENT_COLORS, "webcam_types")
-
-    with right:
-        show_severity_chart(filtered, "webcam_severity")
-
-    left, right = st.columns(2)
-
-    with left:
+    with left.container(border=True):
         show_daily_chart(filtered, "webcam_daily")
 
-    with right:
-
-        driver_counts = (
-            filtered.groupby(["driver_id", "severity"])
-            .size()
-            .reset_index(name="Events")
-        )
-
-        fig = px.bar(
-            driver_counts,
-            x="driver_id",
-            y="Events",
-            color="severity",
-            color_discrete_map=SEVERITY_COLORS,
-            category_orders={"severity": SEVERITY_ORDER},
-            title="Events per driver",
-        )
-
-        fig.update_layout(
-            xaxis={"title": ""},
-            legend={"title": "", "orientation": "h", "y": -0.15},
-        )
-
-        show_chart(fig, "webcam_drivers")
+    with right.container(border=True):
+        show_type_chart(filtered, "webcam_types")
 
     # ----------------------------------
     # RECORDS AND EXPORT
@@ -685,57 +616,27 @@ def show_driving_tab(df):
     # KPI METRICS
     # ----------------------------------
 
-    metric1, metric2, metric3, metric4 = st.columns(4)
+    with st.container(border=True):
 
-    metric1.metric("Average score", f"{scores['score'].mean():.0f} / 100")
-    metric2.metric("Driving events", f"{len(filtered):,}")
-    metric3.metric("High severity", f"{high_events:,}")
-    metric4.metric("Need attention", f"{len(need_attention):,}")
+        metric1, metric2, metric3, metric4 = st.columns(4)
 
-    # One summary message instead of one warning per driver.
-    if need_attention.empty:
-
-        st.success(f"All drivers are at or above {ATTENTION_SCORE}/100.")
-
-    else:
-
-        names = ", ".join(
-            f"{row.driver_id} ({row.score})"
-            for row in need_attention.itertuples()
-        )
-
-        st.warning(f"Below {ATTENTION_SCORE}/100: {names}")
+        metric1.metric("Average score", f"{scores['score'].mean():.0f} / 100")
+        metric2.metric("Driving events", f"{len(filtered):,}")
+        metric3.metric("High severity", f"{high_events:,}")
+        metric4.metric("Need attention", f"{len(need_attention):,} drivers")
 
     # ----------------------------------
-    # SCORES: CHART + LEADERBOARD
+    # SCORES TABLE + EVENT CHARTS
     # ----------------------------------
 
     left, right = st.columns(2)
 
-    with left:
+    with left.container(border=True):
 
-        fig = px.bar(
-            scores.sort_values("score"),
-            x="score",
-            y="driver_id",
-            orientation="h",
-            color="classification",
-            color_discrete_map=SCORE_COLORS,
-            text="score",
-            title="Driver scores",
-        )
+        title, note = st.columns([1, 1], vertical_alignment="bottom")
 
-        fig.update_layout(
-            xaxis={"range": [0, 110], "title": "Score out of 100"},
-            yaxis={"title": ""},
-            legend={"title": "", "orientation": "h", "y": -0.25},
-        )
-
-        show_chart(fig, "driving_scores")
-
-    with right:
-
-        st.markdown("##### 🏆 Leaderboard")
+        title.markdown("##### Driver scores")
+        note.caption(f"Below {ATTENTION_SCORE} needs attention")
 
         leaderboard = scores[[
             "driver_id",
@@ -757,6 +658,14 @@ def show_driving_tab(df):
             leaderboard,
             width="stretch",
             hide_index=True,
+            column_config={
+                "Score": st.column_config.ProgressColumn(
+                    "Score",
+                    min_value=0,
+                    max_value=100,
+                    format="%d",
+                ),
+            },
         )
 
         deductions = ", ".join(
@@ -771,22 +680,13 @@ def show_driving_tab(df):
 
     if filtered.empty:
 
-        st.info("No driving events match these filters.")
+        right.info("No driving events match these filters.")
         return
 
-    # ----------------------------------
-    # EVENT CHARTS
-    # ----------------------------------
+    with right.container(border=True):
+        show_type_chart(filtered, "driving_types")
 
-    left, middle, right = st.columns(3)
-
-    with left:
-        show_type_chart(filtered, DRIVING_EVENT_COLORS, "driving_types")
-
-    with middle:
-        show_severity_chart(filtered, "driving_severity")
-
-    with right:
+    with right.container(border=True):
         show_daily_chart(filtered, "driving_daily")
 
     # ----------------------------------
@@ -805,9 +705,9 @@ def show_driving_tab(df):
 # 9. PAGE LAYOUT
 # ============================================================
 
-st.title("🚗 Fleet Safety Dashboard")
+st.title("Fleet Safety")
 
-st.caption("Driver monitoring and driving behaviour analytics · synthetic demo data")
+st.caption("Synthetic demo data")
 
 try:
 
@@ -820,8 +720,8 @@ except Exception as error:
     st.stop()
 
 monitoring_tab, driving_tab = st.tabs([
-    "👁️ Driver Monitoring",
-    "🚦 Driving Behaviour",
+    "Driver monitoring",
+    "Driving behaviour",
 ])
 
 with monitoring_tab:
