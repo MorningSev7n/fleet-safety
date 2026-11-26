@@ -7,6 +7,7 @@
 # in one Pillow pass at the end (nicer font than cv2.putText).
 
 import math
+import sys
 import time
 
 import cv2
@@ -14,7 +15,10 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 
-FONT_PATH = "/System/Library/Fonts/SFNS.ttf"
+if sys.platform == "win32":
+    FONT_PATH = r"C:\Windows\Fonts\segoeui.ttf"
+else:
+    FONT_PATH = "/System/Library/Fonts/SFNS.ttf"
 
 # Colors are BGR, like the rest of OpenCV.
 GREEN = (80, 200, 60)
