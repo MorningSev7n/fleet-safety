@@ -6,7 +6,9 @@ A laptop webcam watches the driver. If they close their eyes, yawn, look away or
 
 All data is synthetic, and every tool used is free and open source.
 
-**Live dashboard:** https://fleet-safety-lxq8ohkanuem5juopscqut.streamlit.app (if it says the app is asleep, click the wake-up button and wait about 30 seconds)
+**Live dashboards** (same data):
+- Web: https://fleet-safety-flame.vercel.app
+- Streamlit: https://fleet-safety-lxq8ohkanuem5juopscqut.streamlit.app (if asleep, click wake up and wait ~30s)
 
 ---
 
@@ -51,9 +53,9 @@ The detector always runs on the laptop. To show its events and photos on the onl
 
 **Back to offline:** leave `DATABASE_URL=` empty in `.env`. The detector and the local dashboard then use `data/events.db` again.
 
-## Next.js dashboard (new, in `web/`)
+## Next.js dashboard (`web/`)
 
-A cleaner dashboard that reads the same Supabase database as the Streamlit one. The Streamlit app keeps running alongside it until this one is ready. It needs Node.js 20 or newer.
+A cleaner dashboard that reads the same Supabase database as the Streamlit one. Needs Node.js 20 or newer.
 
 Run it on your laptop:
 
