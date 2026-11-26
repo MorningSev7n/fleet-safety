@@ -26,7 +26,8 @@ right away, logs it, and shows everything on a dashboard. free tools only, synth
 src/ (the app):
 - detector.py – webcam loop, settings, alert text, saves events
 - detection/face_checks.py – EAR, MAR, head pose maths
-- detection/alarm.py – siren sound + afplay background thread
+- detection/alarm.py – chime, siren + spoken warning (afplay / say) in a background thread
+- detection/hud.py – draws the camera HUD
 - detection/phone_check.py – face box + "phone near face" check (YOLO itself runs in detector.py)
 - severity.py – LOW/MEDIUM/HIGH rules per event type
 - db.py – save_event(..., timestamp=None), get_events(), save_driving_events(), get_driving_events()
@@ -38,7 +39,7 @@ scripts/ (run by hand from the project folder, e.g. python scripts/seed.py):
 - driving_behavior.py + seed_behavior.py – 40 fake driving events (braking, cornering, speeding)
 
 ## events table
-id, timestamp, driver_id, vehicle_id, event_type (EYES_CLOSED, YAWN, LOOK_AWAY, PHONE), duration_s, severity
+id, timestamp, driver_id, vehicle_id, event_type (EYES_CLOSED, YAWN, LOOK_AWAY, PHONE, FATIGUE), duration_s, severity, snapshot
 
 ## driving_events table
 id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING, SPEEDING), measured_value, threshold_value, severity
@@ -48,6 +49,9 @@ id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING
 - MAR threshold: 0.65
 - looking away: head turned more than ~25° for 2s
 - alarm cooldown: 5s
+- calibration: 5 s at startup, eye limit = 75 % of the median EAR (falls back to 0.20)
+- PERCLOS: 60 s window, FATIGUE starts above 15 %, ends below 12 %
+- alarm: chime for the first 2 s, then siren + spoken warning at most every 5 s
 - yolo: every 5th frame, phone near face for 1s or more
 
 ## how i want you to help
@@ -69,7 +73,13 @@ id, timestamp, driver_id, vehicle_id, event_type (HARSH_BRAKING, HARSH_CORNERING
 - [x] dashboard.py
 - [x] tested on my phone
 - [x] README setup note
+- [x] camera HUD (status bar, rings, gauges, toast)
+- [x] per-driver eye calibration + C key
+- [x] live dashboard + event snapshots
+- [x] PERCLOS fatigue meter + FATIGUE event
+- [x] spoken alerts (chime → siren + say) + README features
 
 ## session log (newest first)
+- 26 nov – demo upgrade (5 stacked branches): new HUD, eye calibration (C key), live dashboard + snapshots, PERCLOS fatigue meter, spoken alerts, README features. broken: st.image fails in this venv (snapshots shown as base64 html instead). next: test each branch on the webcam in order, then merge
 - 25 nov – cleanup: split detector.py into src/detection/ (face_checks, alarm, phone_check), moved seed/calibrate scripts to scripts/ (code moved unchanged), renamed test_eyes → calibrate_eyes, seeded events now spread over 14 days (fixed the 40 rows in events.db too), trimmed requirements.txt, added .env.example + README setup. next: test on phone, gemini summary (optional)
 - 23 nov – setup done: venv, packages, github repo. next: test_eyes.py

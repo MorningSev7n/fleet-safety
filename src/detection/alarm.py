@@ -1,4 +1,4 @@
-"""Background alarm siren played with macOS afplay. Moved from detector.py unchanged."""
+"""Background alarm: chime, then siren + spoken warning (macOS afplay / say)."""
 
 import math
 import os
@@ -16,6 +16,16 @@ ALARM_FREQUENCY_HIGH = 1100
 ALARM_DURATION = 1.2
 ALARM_VOLUME = 0.65
 
+# Escalation: chime first, then siren + speech
+CHIME_SOUND = "/System/Library/Sounds/Glass.aiff"
+CHIME_SECONDS = 2.0
+SPEECH_COOLDOWN = 5.0
+SPEECH_MESSAGES = {
+    "EYES_CLOSED": "Wake up. Eyes on the road.",
+    "LOOK_AWAY": "Eyes on the road.",
+    "PHONE": "Put the phone down.",
+}
+
 
 # ==========================================
 # 4. CONTINUOUS ALARM
@@ -28,6 +38,7 @@ ALARM_SOUND = os.path.join(
 
 alarm_active = threading.Event()
 alarm_shutdown = threading.Event()
+alarm_reason = None  # set by set_alarm(), read by the alarm thread
 
 
 def create_alarm_sound():
@@ -77,52 +88,108 @@ def create_alarm_sound():
     print("Emergency alarm sound generated.")
 
 
+def set_alarm(reason):
+    """Turn the alarm on with a reason (EYES_CLOSED, LOOK_AWAY, PHONE), or off with None."""
+
+    global alarm_reason
+
+    if reason is None:
+        alarm_active.clear()
+
+    else:
+        alarm_reason = reason
+        alarm_active.set()
+
+
+def stop_process(process):
+    """Stop a sound or speech process if it is still running."""
+
+    if process is not None and process.poll() is None:
+
+        process.terminate()
+
+        try:
+            process.wait(timeout=0.5)
+
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def play_while_active(sound_file, until=None):
+    """Play one sound, cut it off when the alarm stops (or at time `until`)."""
+
+    process = subprocess.Popen(
+        ["afplay", sound_file],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    while (
+        process.poll() is None
+        and alarm_active.is_set()
+        and not alarm_shutdown.is_set()
+        and (until is None or time.time() < until)
+    ):
+        time.sleep(0.05)
+
+    stop_process(process)
+
+
 def play_alarm_continuously():
-    """Keep playing the alarm while an unsafe behavior is detected."""
+    """Keep playing the alarm while an unsafe behavior is detected.
+
+    First CHIME_SECONDS: one soft chime. After that: the siren, plus a spoken
+    message at most once every SPEECH_COOLDOWN seconds.
+    """
 
     while not alarm_shutdown.is_set():
 
         if not alarm_active.wait(timeout=0.1):
             continue
 
-        while alarm_active.is_set() and not alarm_shutdown.is_set():
+        alarm_start = time.time()
+        last_speech = None
+        speech = None
 
-            try:
+        try:
+
+            # Short chime first, then wait quietly until the 2 s are up.
+            play_while_active(CHIME_SOUND, until=alarm_start + CHIME_SECONDS)
+
+            while (
+                alarm_active.is_set()
+                and not alarm_shutdown.is_set()
+                and time.time() < alarm_start + CHIME_SECONDS
+            ):
+                time.sleep(0.05)
+
+            while alarm_active.is_set() and not alarm_shutdown.is_set():
 
                 if not os.path.exists(ALARM_SOUND):
 
                     print("ERROR: Alarm sound file is missing.")
-                    alarm_active.wait(timeout=0.5)
+                    time.sleep(0.5)  # wait() returns at once while the alarm is on
                     continue
 
-                process = subprocess.Popen(
-                    ["afplay", ALARM_SOUND],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+                # say runs on its own, so the siren keeps going while it talks.
+                if last_speech is None or time.time() - last_speech >= SPEECH_COOLDOWN:
 
-                while (
-                    process.poll() is None
-                    and alarm_active.is_set()
-                    and not alarm_shutdown.is_set()
-                ):
-                    time.sleep(0.05)
+                    speech = subprocess.Popen(
+                        ["say", SPEECH_MESSAGES.get(alarm_reason, "Eyes on the road.")],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    last_speech = time.time()
 
-                if process.poll() is None:
+                play_while_active(ALARM_SOUND)
 
-                    process.terminate()
+        except Exception as error:
 
-                    try:
-                        process.wait(timeout=0.5)
+            print(f"Alarm playback error: {error}")
+            time.sleep(0.5)  # wait() returns at once while the alarm is on
 
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
-
-            except Exception as error:
-
-                print(f"Alarm playback error: {error}")
-                alarm_active.wait(timeout=0.5)
+        stop_process(speech)
 
     print("Alarm thread stopped.")
 
@@ -157,7 +224,7 @@ def play_chime():
     try:
 
         subprocess.Popen(
-            ["afplay", "/System/Library/Sounds/Glass.aiff"],
+            ["afplay", CHIME_SOUND],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )

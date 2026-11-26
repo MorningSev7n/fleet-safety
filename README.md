@@ -2,6 +2,20 @@
 
 Detects driver fatigue and phone use from a webcam, alerts in real time, and logs events to a dashboard.
 
+## Features
+
+- **Camera HUD** – status bar (ATTENTIVE / DROWSY / ALERT / NO FACE), countdown rings, eye/mouth/head gauges, red pulsing border, "Logged" toast
+- **Per-driver eye calibration** – 5 s at startup sets the eye limit to 75 % of your normal EAR
+- **Live dashboard** – "Live now" section and charts refresh every 2 s
+- **Event snapshots** – a photo of each event, shown on the dashboard (`data/snapshots/`)
+- **PERCLOS fatigue meter** – share of the last 60 s with eyes closed; "TAKE A BREAK" + FATIGUE event above 15 %
+- **Spoken alerts** – chime for the first 2 s, then siren + a spoken warning ("Wake up. Eyes on the road.", "Put the phone down.")
+
+## Keys (camera window)
+
+- **C** – recalibrate (new driver)
+- **Q** – quit
+
 ## Setup (Python 3.11)
 
 ```bash
@@ -18,7 +32,7 @@ Put `yolo26n.pt` in `models/`. Optional: copy `.env.example` to `.env`.
 python scripts/seed.py            # 40 fake webcam events
 python scripts/seed_behavior.py   # 40 fake driving events
 python scripts/calibrate_eyes.py  # optional: check your EAR threshold
-python src/detector.py            # webcam monitor, press Q to quit
+python src/detector.py            # webcam monitor, C = recalibrate, Q = quit
 streamlit run src/dashboard.py
 ```
 

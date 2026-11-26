@@ -26,6 +26,7 @@ from detection.alarm import (
     alarm_active,
     create_alarm_sound,
     play_chime,
+    set_alarm,
     start_alarm_worker,
     stop_alarm_worker,
 )
@@ -725,13 +726,15 @@ def run_detector():
                     or phone_alert_active
                 )
 
-                if alarm_required:
-
-                    alarm_active.set()
-
+                # The reason picks what the alarm says out loud.
+                if eyes_alert_active:
+                    set_alarm("EYES_CLOSED")
+                elif phone_alert_active:
+                    set_alarm("PHONE")
+                elif look_away_alert_active:
+                    set_alarm("LOOK_AWAY")
                 else:
-
-                    alarm_active.clear()
+                    set_alarm(None)
 
                 # ----------------------------------
                 # DRAW HUD
