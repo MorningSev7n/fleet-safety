@@ -23,6 +23,7 @@ from detection.alarm import (
     stop_alarm_worker,
 )
 from detection.phone_check import get_face_box, phone_near_face
+from detection.hud import draw_hud
 
 
 # ==========================================
@@ -83,7 +84,7 @@ def log_event(event_type, duration):
             f"({duration:.2f} seconds)"
         )
 
-        return
+        return None
 
     try:
 
@@ -101,11 +102,16 @@ def log_event(event_type, duration):
             f"Severity: {severity}"
         )
 
+        # The HUD shows this as a "Logged: ..." toast.
+        return (event_type, duration, severity)
+
     except Exception as error:
 
         print(
             f"Database error while saving {event_type}: {error}"
         )
+
+        return None
 
 
 def finish_event(event_type, start_time, end_time):
@@ -113,39 +119,23 @@ def finish_event(event_type, start_time, end_time):
     Finalize an event when the detected behavior ends.
 
     Events shorter than their minimum duration are ignored.
+    Returns (event_type, duration, severity) if saved, else None.
     """
 
     if start_time is None:
-        return
+        return None
 
     duration = end_time - start_time
 
     if classify_severity(event_type, duration) != "UNKNOWN":
-        log_event(event_type, duration)
+        return log_event(event_type, duration)
+
+    return None
 
 
 # ==========================================
 # 3. DISPLAY HELPERS
 # ==========================================
-
-def draw_text(
-    frame,
-    text,
-    position,
-    color=(255, 255, 255),
-    scale=0.65
-):
-
-    cv2.putText(
-        frame,
-        text,
-        position,
-        cv2.FONT_HERSHEY_SIMPLEX,
-        scale,
-        color,
-        2
-    )
-
 
 def draw_eye_points(frame, points):
 
@@ -219,6 +209,10 @@ def run_detector():
     phone_detected = False
     phone_box_to_draw = None
 
+    # Last saved event, shown as a toast for a few seconds.
+    toast = None
+    toast_time = 0.0
+
     try:
 
         with mp_face_mesh.FaceMesh(
@@ -247,6 +241,16 @@ def run_detector():
                 look_away_alert_active = False
                 phone_alert_active = False
 
+                # Events saved this frame (for the HUD toast).
+                saved_events = []
+
+                # HUD readings (stay None when there is no face).
+                average_ear = None
+                mar = None
+                yaw = None
+                eyes_closed = False
+                yawning = False
+
                 # ----------------------------------
                 # FACE DETECTION
                 # ----------------------------------
@@ -274,16 +278,6 @@ def run_detector():
                         face_landmarks,
                         width,
                         height
-                    )
-
-                    fx1, fy1, fx2, fy2 = face_box
-
-                    cv2.rectangle(
-                        frame,
-                        (fx1, fy1),
-                        (fx2, fy2),
-                        (255, 255, 0),
-                        2
                     )
 
                     # ----------------------------------
@@ -331,11 +325,11 @@ def run_detector():
 
                     else:
 
-                        finish_event(
+                        saved_events.append(finish_event(
                             "EYES_CLOSED",
                             eyes_closed_start,
                             current_time
-                        )
+                        ))
 
                         eyes_closed_start = None
 
@@ -358,11 +352,11 @@ def run_detector():
 
                     else:
 
-                        finish_event(
+                        saved_events.append(finish_event(
                             "YAWN",
                             yawn_start,
                             current_time
-                        )
+                        ))
 
                         yawn_start = None
 
@@ -396,111 +390,39 @@ def run_detector():
 
                     else:
 
-                        finish_event(
+                        saved_events.append(finish_event(
                             "LOOK_AWAY",
                             look_away_start,
                             current_time
-                        )
+                        ))
 
                         look_away_start = None
-
-                    # ----------------------------------
-                    # DISPLAY FACE READINGS
-                    # ----------------------------------
-
-                    draw_text(
-                        frame,
-                        f"Left EAR: {left_ear:.3f}",
-                        (20, 30)
-                    )
-
-                    draw_text(
-                        frame,
-                        f"Right EAR: {right_ear:.3f}",
-                        (20, 60)
-                    )
-
-                    draw_text(
-                        frame,
-                        f"Average EAR: {average_ear:.3f}",
-                        (20, 90)
-                    )
-
-                    draw_text(
-                        frame,
-                        f"MAR: {mar:.3f}",
-                        (20, 120)
-                    )
-
-                    if yaw is not None:
-
-                        draw_text(
-                            frame,
-                            f"Head yaw: {yaw:.1f}",
-                            (20, 150)
-                        )
-
-                    if eyes_closed:
-
-                        draw_text(
-                            frame,
-                            "WARNING: EYES CLOSED",
-                            (20, 195),
-                            (0, 0, 255),
-                            0.8
-                        )
-
-                    if yawning:
-
-                        draw_text(
-                            frame,
-                            "YAWNING",
-                            (20, 225),
-                            (0, 165, 255)
-                        )
-
-                    if looking_away:
-
-                        draw_text(
-                            frame,
-                            "LOOKING AWAY",
-                            (20, 255),
-                            (0, 0, 255)
-                        )
 
                 else:
 
                     # Face disappearance ends active face events.
 
-                    finish_event(
+                    saved_events.append(finish_event(
                         "EYES_CLOSED",
                         eyes_closed_start,
                         current_time
-                    )
+                    ))
 
-                    finish_event(
+                    saved_events.append(finish_event(
                         "YAWN",
                         yawn_start,
                         current_time
-                    )
+                    ))
 
-                    finish_event(
+                    saved_events.append(finish_event(
                         "LOOK_AWAY",
                         look_away_start,
                         current_time
-                    )
+                    ))
 
                     eyes_closed_start = None
                     yawn_start = None
                     look_away_start = None
-
-                    draw_text(
-                        frame,
-                        "NO FACE DETECTED",
-                        (20, 50),
-                        (0, 0, 255),
-                        0.9
-                    )
 
                 # ----------------------------------
                 # YOLO PHONE DETECTION
@@ -597,11 +519,11 @@ def run_detector():
 
                 else:
 
-                    finish_event(
+                    saved_events.append(finish_event(
                         "PHONE",
                         phone_start,
                         current_time
-                    )
+                    ))
 
                     phone_start = None
 
@@ -619,58 +541,66 @@ def run_detector():
 
                     alarm_active.set()
 
-                    draw_text(
-                        frame,
-                        "!!! EMERGENCY ALERT - PAY ATTENTION !!!",
-                        (20, 335),
-                        (0, 0, 255),
-                        0.8
-                    )
-
-                    draw_text(
-                        frame,
-                        "ALARM ACTIVE - CORRECT YOUR BEHAVIOR",
-                        (20, 370),
-                        (0, 0, 255),
-                        0.65
-                    )
-
                 else:
 
                     alarm_active.clear()
 
                 # ----------------------------------
-                # DRAW PHONE BOX
+                # DRAW HUD
                 # ----------------------------------
 
-                if phone_box_to_draw is not None:
+                for saved in saved_events:
+                    if saved is not None:
+                        toast = saved
+                        toast_time = current_time
 
-                    px1, py1, px2, py2 = phone_box_to_draw
+                if not face_detected:
+                    status = "NO FACE"
+                elif alarm_required:
+                    status = "ALERT"
+                elif yawning or eyes_closed:
+                    status = "DROWSY"
+                else:
+                    status = "ATTENTIVE"
 
-                    cv2.rectangle(
-                        frame,
-                        (px1, py1),
-                        (px2, py2),
-                        (0, 165, 255),
-                        2
+                # Countdown rings, only while a timer runs.
+                timers = {}
+
+                if eyes_closed_start is not None:
+                    timers["Eyes closed"] = (
+                        current_time - eyes_closed_start,
+                        EYES_CLOSED_SECONDS
                     )
 
-                    draw_text(
-                        frame,
-                        "PHONE",
-                        (px1, max(20, py1 - 10)),
-                        (0, 165, 255)
+                if look_away_start is not None:
+                    timers["Looking away"] = (
+                        current_time - look_away_start,
+                        LOOK_AWAY_SECONDS
                     )
 
-                if phone_detected:
-
-                    draw_text(
-                        frame,
-                        "PHONE NEAR FACE",
-                        (20, 290),
-                        (0, 0, 255),
-                        0.8
+                if phone_start is not None:
+                    timers["Phone"] = (
+                        current_time - phone_start,
+                        PHONE_SECONDS
                     )
+
+                hud_state = {
+                    "status": status,
+                    "driver_id": DRIVER_ID,
+                    "timers": timers,
+                    "ear": average_ear,
+                    "ear_limit": EAR_THRESHOLD,
+                    "mar": mar,
+                    "mar_limit": MAR_THRESHOLD,
+                    "yaw": yaw,
+                    "yaw_limit": LOOK_AWAY_ANGLE,
+                    "alarm": alarm_required,
+                    "face_box": face_box,
+                    "phone_box": phone_box_to_draw,
+                    "toast": toast if current_time - toast_time < 3 else None,
+                }
+
+                draw_hud(frame, hud_state)
 
                 # ----------------------------------
                 # SHOW CAMERA
