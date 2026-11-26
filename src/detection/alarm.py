@@ -1,13 +1,20 @@
-"""Background alarm: chime, then siren + spoken warning (macOS afplay / say)."""
+"""Background alarm: chime, then siren + spoken warning.
+
+macOS uses afplay / say. Windows uses PowerShell (SoundPlayer / System.Speech).
+"""
 
 import math
 import os
 import subprocess
 import struct
+import sys
 import tempfile
 import threading
 import time
 import wave
+
+
+ON_WINDOWS = sys.platform == "win32"
 
 
 # Alarm
@@ -17,7 +24,10 @@ ALARM_DURATION = 1.2
 ALARM_VOLUME = 0.65
 
 # Escalation: chime first, then siren + speech
-CHIME_SOUND = "/System/Library/Sounds/Glass.aiff"
+if ON_WINDOWS:
+    CHIME_SOUND = r"C:\Windows\Media\chimes.wav"
+else:
+    CHIME_SOUND = "/System/Library/Sounds/Glass.aiff"
 CHIME_SECONDS = 2.0
 SPEECH_COOLDOWN = 5.0
 SPEECH_MESSAGES = {
@@ -101,6 +111,36 @@ def set_alarm(reason):
         alarm_active.set()
 
 
+def powershell(script):
+    """Command that runs one line of PowerShell (Windows only)."""
+
+    return ["powershell", "-NoProfile", "-Command", script]
+
+
+def sound_command(sound_file):
+    """Command that plays one sound file and exits when it ends."""
+
+    if ON_WINDOWS:
+        # '' is how PowerShell writes a ' inside a quoted string.
+        path = sound_file.replace("'", "''")
+        return powershell(f"(New-Object Media.SoundPlayer '{path}').PlaySync()")
+
+    return ["afplay", sound_file]
+
+
+def speech_command(text):
+    """Command that speaks one sentence out loud."""
+
+    if ON_WINDOWS:
+        text = text.replace("'", "''")
+        return powershell(
+            "Add-Type -AssemblyName System.Speech; "
+            f"(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{text}')"
+        )
+
+    return ["say", text]
+
+
 def stop_process(process):
     """Stop a sound or speech process if it is still running."""
 
@@ -120,7 +160,7 @@ def play_while_active(sound_file, until=None):
     """Play one sound, cut it off when the alarm stops (or at time `until`)."""
 
     process = subprocess.Popen(
-        ["afplay", sound_file],
+        sound_command(sound_file),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL
     )
@@ -176,7 +216,7 @@ def play_alarm_continuously():
                 if last_speech is None or time.time() - last_speech >= SPEECH_COOLDOWN:
 
                     speech = subprocess.Popen(
-                        ["say", SPEECH_MESSAGES.get(alarm_reason, "Eyes on the road.")],
+                        speech_command(SPEECH_MESSAGES.get(alarm_reason, "Eyes on the road.")),
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
@@ -224,7 +264,7 @@ def play_chime():
     try:
 
         subprocess.Popen(
-            ["afplay", CHIME_SOUND],
+            sound_command(CHIME_SOUND),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
