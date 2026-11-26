@@ -6,6 +6,8 @@ A laptop webcam watches the driver. If they close their eyes, yawn, look away or
 
 All data is synthetic, and every tool used is free and open source.
 
+**Live dashboard:** https://fleet-safety-d5x6sfeomjkaajymggizkd.streamlit.app (if it says the app is asleep, click the wake-up button and wait about 30 seconds)
+
 ---
 
 ## What you need
@@ -37,7 +39,17 @@ Download the YOLO phone-detection model into `models/`:
 python -c "from ultralytics import YOLO; YOLO('models/yolo26n.pt')"
 ```
 
-You don't need a `.env` file. `.env.example` is for an optional Gemini feature that isn't used yet.
+You don't need a `.env` file to run everything on your laptop. You only need one for the online dashboard (next section).
+
+## Online dashboard (optional)
+
+The detector always runs on the laptop. To show its events and photos on the online dashboard, both share one free **Supabase** Postgres database:
+
+1. Copy `.env.example` to `.env` and set `DATABASE_URL=` to your Supabase **Session pooler** connection string (with your real password).
+2. Fill it with demo data once: `python scripts/seed.py` and `python scripts/seed_behavior.py`.
+3. On share.streamlit.io, deploy this repo with main file `src/dashboard.py`, and add the same line in **Secrets**: `DATABASE_URL = "postgresql://..."`.
+
+**Back to offline:** leave `DATABASE_URL=` empty in `.env`. The detector and the local dashboard then use `data/events.db` again.
 
 ## Run
 
@@ -133,4 +145,4 @@ models/           yolo26n.pt (downloaded in Setup, not in git)
 
 ## Free stack
 
-Python, OpenCV, MediaPipe Face Mesh, Ultralytics YOLO, SQLite, Streamlit, Plotly, and pandas, all run locally.
+Python, OpenCV, MediaPipe Face Mesh, Ultralytics YOLO, SQLite, Streamlit, Plotly, and pandas, all run locally. Optional online dashboard: Supabase (free Postgres) and Streamlit Community Cloud.
